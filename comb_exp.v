@@ -16,7 +16,27 @@ Notation "[ ]" := nil.
 Notation "[ x ; .. ; y ]" := (cons x .. (cons y nil) ..).
 (* }}} *)
 
-(* Syntax {{{ *)
+(* Types - Syntax {{{ *)
+Fixpoint Arity (A B : Type) (n: nat) : Type :=
+  match n with
+  | O => B
+  | S n' => A -> (Arity A B n')
+  end.
+
+Check Arity N N 2.
+
+Inductive comb_fn : Type :=
+  | fn (n : nat) (f : Arity N N n).
+
+(* Alternative inductive definition that isn't used *)
+(* Inductive comb_fn' : Type :=
+  | fn_unit (f : N -> N)
+  | fn_curry (f : N -> comb_fn').
+
+Check (fn_curry (fun (x : N) => fn_unit (fun (y : N) => y))) : comb_fn'. *)
+(* }}} *)
+
+(* Syntax - AST {{{ *)
 Inductive comb_exp : Type :=
   | Constant (x : N)
   | Var (x : string)
@@ -24,15 +44,16 @@ Inductive comb_exp : Type :=
   | Bind (x : string) (c1 : comb_exp) (c2 : comb_exp)
   .
 
-(*Inductive comb_fn : Type :=
-  | fn_unit (f : N -> N)
-  | fn_curry (f : N -> comb_fn).
+(* Tests {{{ *)
+Definition constant_0 : comb_exp :=
+  Constant N0.
 
-Check (fn_curry (fun (x : N) => fn_unit (fun (y : N) => y))) : comb_fn.
+Definition var_x : comb_exp :=
+  Var "x".
 
-Inductive comb_fn (f : N -> N) : Type :=
-  | fn_unit : comb_fn f.
-     | fn_curry (f : N -> comb_fn) (f' : comb_fn) : comb_fn f f'.*)
+Definition call_fn : comb_exp := 
+  Call "x" [constant_0].
+(* }}} *)
 (* }}} *)
 
 (* Syntax - Notation {{{ *)
@@ -45,16 +66,16 @@ Declare Scope com_scope.
 Notation "<{ e }>" := e (at level 0, e custom com at level 99) : com_scope.
 Notation "( x )" := x (in custom com, x at level 99) : com_scope.
 Notation "x" := x (in custom com at level 0, x constr at level 0) : com_scope.
-Notation "f args" := (Call f args)
+(*Notation "f args" := (Call f args)
   (in custom com at level 0, only parsing,
-  f constr at level 0, args constr at level 9) : com_scope.
-(*Notation "f x .. y" := (.. (f x) .. y)
+   f constr at level 0, args constr at level 9) : com_scope.*)
+Notation "f x .. y" := (Call f (cons x .. (cons y nil) ..))
   (in custom com at level 0, only parsing,
   f constr at level 0, x constr at level 9,
-   y constr at level 9) : com_scope.*)
+  y constr at level 9) : com_scope.
 Notation "'let' x ':=' y 'in' e"  := (Bind x y e)
   (in custom com at level 0, x constr at level 0,
-     y at level 85, no associativity) : com_scope.
+  y at level 85, no associativity) : com_scope.
 
 (*Notation "x + y"   := (APlus x y) (in custom com at level 50, left associativity).
 Notation "x - y"   := (AMinus x y) (in custom com at level 50, left associativity).
@@ -71,29 +92,20 @@ Notation "x && y"  := (BAnd x y) (in custom com at level 80, left associativity)
  Notation "'~' b"   := (BNot b) (in custom com at level 75, right associativity).*)
 
 Open Scope com_scope.
-(* }}} *)
 
-(* Syntax - Tests {{{ *)
-Definition constant_0 : comb_exp :=
-  Constant N0.
-
-Definition var_x : comb_exp :=
-  Var "x".
-
-Definition call_fn : comb_exp := 
-  Call "x" [constant_0].
-
+(* Tests {{{ *)
 Definition X0 : string := "X0".
 Definition X1 : string := "X1".
 Definition example_comb_exp1 : comb_exp := <{ N0 }>.
 Definition example_comb_exp2 : comb_exp := <{ X0 }>.
 Definition example_comb_exp3 : comb_exp := <{ let X0 := N0 in N0 }>.
 (* }}} *)
+(* }}} *)
 
-(* State {{{ *)
+(* Types - Interpreter State {{{ *)
 Module Import M := FMapList.Make(String_as_OT).
 Definition state: Type := M.t N.
-Definition env: Type := M.t (list N -> N).
+Definition env: Type := M.t comb_fn.
 
 Arguments M.empty {elt}.
 
@@ -103,10 +115,11 @@ Notation "x '|->' v" := (M.add x v M.empty)
   (at level 100).
 (* }}} *)
 
-(* Return types {{{ *)
+(* Types - Interpreter Result {{{ *)
 Inductive error : Type :=
   | UnboundNameError
   | InvalidArgumentError
+  | TypeError
   | EvaluationError
   .
 
@@ -134,7 +147,18 @@ Fixpoint all_ok_or_first {T : Type} (l : list (result T)) : result (list T) :=
 (* }}} *)
 
 (* Interpreter {{{ *)
-(* Idea: pure function; evaluates expression to an N *)
+(* Functions are pure; evaluates expression to an N.
+  This function does the function signature matching. *)
+Fixpoint apply (c : comb_fn) (l : list N) : result N :=
+  match c, l with
+  | fn 0 f, nil => Ok f
+  | fn (S n') f, h :: l' => apply (fn n' (f h)) l'
+  | _, _ => Err TypeError
+  end.
+
+(* Parameters
+- Gamma is the state
+- Sigma is the map from function names to semantics (function with a specific arity) *)
 Fixpoint interpret (c : comb_exp) (g : state) (s : env) : result N :=
   match c with
   | Constant x => Ok x
@@ -145,9 +169,9 @@ Fixpoint interpret (c : comb_exp) (g : state) (s : env) : result N :=
       end
   | Call f l => 
       match (M.find f s) with
-      | Some fn =>
+      | Some c => 
           match all_ok_or_first (List.map (fun c => interpret c g s) l) with
-          | Ok l => Ok (fn l)
+          | Ok l => apply c l
           | Err e => Err e
           end
       | None => Err UnboundNameError
@@ -164,57 +188,38 @@ Fixpoint interpret (c : comb_exp) (g : state) (s : env) : result N :=
 Definition N1 : N := N.succ N0.
 
 Definition add : string := "add".
-Fixpoint add_fn (l : list N) : N :=
-  match l with
-  | nil => N0
-  | h :: l' => N.add h (add_fn l')
-  end.
+Definition add_fn (a b : N) : N := N.add a b.
 
 Definition land : string := "land".
-Fixpoint land_fn (l : list N) : N :=
-  match l with
-  | nil => N1
-  | N0 :: l' => N0
-  | _ :: l' => land_fn l'
+Definition land_fn (a b : N) : N :=
+  match a, b with
+  | N0, N0 => N0
+  | N0, _ => N0
+  | _, N0 => N0
+  | _, _ => N1
   end.
-
-Example land_test1: land_fn [N0; N0] = N0.
-Proof. reflexivity. Qed.
-Example land_test2: land_fn [N0; N1] = N0.
-Proof. reflexivity. Qed.
-Example land_test3: land_fn [N1; N0] = N0.
-Proof. reflexivity. Qed.
-Example land_test4: land_fn [N1; N1] = N1.
-Proof. reflexivity. Qed.
-Example land_test5: land_fn [N.succ N1; N.succ N1] = N1.
-Proof. simpl. reflexivity. Qed.
 
 Definition lor : string := "lor".
-Fixpoint lor_fn (l : list N) : N :=
-  match l with
-  | nil => N0
-  | N0 :: l' => lor_fn l'
-  | _ :: l' => N1
+Fixpoint lor_fn (a b : N) : N :=
+  match a, b with
+  | N0, N0 => N0
+  | _, _ => N1
   end.
 
-Example lor_test1: lor_fn [N0; N0] = N0.
-Proof. reflexivity. Qed.
-Example lor_test2: lor_fn [N0; N1] = N1.
-Proof. reflexivity. Qed.
-Example lor_test3: lor_fn [N1; N0] = N1.
-Proof. reflexivity. Qed.
-Example lor_test4: lor_fn [N1; N1] = N1.
-Proof. reflexivity. Qed.
-Example lor_test5: lor_fn [N.succ N1; N.succ N1] = N1.
-Proof. simpl. reflexivity. Qed.
+Definition lnot : string := "lor".
+Fixpoint lnot_fn (a : N) : N :=
+  match a with
+  | N0 => N1
+  | _ => N0
+  end.
 
 (* FIXME all N > N0 are coerced to True in the current impl *)
-(* FIXME the list implementation doesn't allow for nice matching with lnot *)
 
-Definition default_env := (
-  add |-> add_fn;
-  land |-> land_fn;
-  lor |-> lor_fn
+Definition default_env : env := (
+  add |-> fn 2 add_fn;
+  land |-> fn 2 land_fn;
+  lor |-> fn 2 lor_fn;
+  lnot |-> fn 1 lnot_fn
 ).
 (* }}} *)
 
@@ -249,7 +254,15 @@ Example test_interpret5:
   ) M.empty default_env = Ok N0.
 Proof. simpl. reflexivity. Qed.
 
-(* FIXME: another issue is that I don't fully understand how the parser works *)
+Example test_interpret6:
+  interpret (
+    Call land [Constant N0; Constant N0; Constant N0]
+  ) M.empty default_env = Err TypeError.
+Proof. simpl. reflexivity. Qed.
+
+(* FIXME: 
+another issue is that I don't fully understand how the parser works 
+so I can't get the string working and have to work around by defining X0 X1 *)
 Example test_interpret_parse1:
   interpret <{ let X0 := N0 in X0 }> M.empty default_env = Ok N0.
 Proof. simpl. reflexivity. Qed.
@@ -258,17 +271,16 @@ Example test_interpret_parse2:
   interpret <{ X0 }> (X0 |-> N0) default_env = Ok N0.
 Proof. simpl. reflexivity. Qed.
 
+Example test_interpret_parse3:
+  interpret <{ land (Var X0) (Var X0) }> (X0 |-> N0) default_env = Ok N0.
+(*interpret <{ land (Var X0) (Var X0) }> (X0 |-> N0) default_env = Ok N0.*)
+Proof. simpl. reflexivity. Qed.
+
 (*Example test_interpret_parseN:
- interpret <{ let X := N1 in land [X;X] }> M.empty default_env = Ok (N.succ (N.succ N0)).
+ interpret <{ let X0 := N1 in land X0 X0 }> M.empty default_env = Ok (N.succ (N.succ N0)).
    Proof. reflexivity. Qed.*)
 
 (* }}} *)
-
-  (*
-- Gamma is the state
-- Sigma is the map from function names to semantics, i.e. String -> list N -> N
-- The result can just be a special entry in the returned state of type Gamma.
-*)
 
 (* interpret (AND [1; 1]) {} s = Ok 1 *)
 
