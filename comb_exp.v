@@ -4,9 +4,12 @@ From Coq Require Import Strings.String.
 From Coq Require Import FSets.FMapList.
 From Coq Require Import Structures.OrderedTypeEx.
 
- Local Open Scope N_scope.
 
-(* META: Shorthands {{{ *)
+Module CombExp.
+
+Local Open Scope N_scope.
+
+(* Shorthands - List {{{ *)
 Notation "x :: l" := (cons x l)
   (at level 60, right associativity).
 Notation "[ ]" := nil.
@@ -21,7 +24,7 @@ Inductive comb_exp : Type :=
   | Bind (x : string) (c1 : comb_exp) (c2 : comb_exp)
   .
 
-  (*Inductive comb_fn : Type :=
+(*Inductive comb_fn : Type :=
   | fn_unit (f : N -> N)
   | fn_curry (f : N -> comb_fn).
 
@@ -70,7 +73,7 @@ Notation "x && y"  := (BAnd x y) (in custom com at level 80, left associativity)
 Open Scope com_scope.
 (* }}} *)
 
-(* Syntax - Tests *)
+(* Syntax - Tests {{{ *)
 Definition constant_0 : comb_exp :=
   Constant N0.
 
@@ -80,20 +83,30 @@ Definition var_x : comb_exp :=
 Definition call_fn : comb_exp := 
   Call "x" [constant_0].
 
-Definition X : string := "X".
+Definition X0 : string := "X0".
+Definition X1 : string := "X1".
 Definition example_comb_exp1 : comb_exp := <{ N0 }>.
-Definition example_comb_exp2 : comb_exp := <{ X }>.
-Definition example_comb_exp3 : comb_exp := <{ let X := N0 in N0 }>.
+Definition example_comb_exp2 : comb_exp := <{ X0 }>.
+Definition example_comb_exp3 : comb_exp := <{ let X0 := N0 in N0 }>.
 (* }}} *)
 
 (* State {{{ *)
 Module Import M := FMapList.Make(String_as_OT).
+Definition state: Type := M.t N.
+Definition env: Type := M.t (list N -> N).
 
-Definition state_var: Type := M.t N.
-Definition state_fn: Type := M.t (list N -> N).
+Arguments M.empty {elt}.
 
+Notation "x '|->' v ';' m" := (M.add x v m)
+  (at level 100, v at next level, right associativity).
+Notation "x '|->' v" := (M.add x v M.empty)
+  (at level 100).
+(* }}} *)
+
+(* Return types {{{ *)
 Inductive error : Type :=
   | UnboundNameError
+  | InvalidArgumentError
   | EvaluationError
   .
 
@@ -101,7 +114,6 @@ Inductive result (T : Type) : Type :=
   | Ok (v : T)
   | Err (e : error)
   .
-(* }}} *)
 
 Arguments Ok {T}.
 Arguments Err {T}.
@@ -119,10 +131,11 @@ Fixpoint all_ok_or_first {T : Type} (l : list (result T)) : result (list T) :=
       | Err e => Err e
       end
   end.
+(* }}} *)
 
 (* Interpreter {{{ *)
 (* Idea: pure function; evaluates expression to an N *)
-Fixpoint interpret (c : comb_exp) (g : state_var) (s : state_fn) : result N :=
+Fixpoint interpret (c : comb_exp) (g : state) (s : env) : result N :=
   match c with
   | Constant x => Ok x
   | Var x => 
@@ -137,46 +150,118 @@ Fixpoint interpret (c : comb_exp) (g : state_var) (s : state_fn) : result N :=
           | Ok l => Ok (fn l)
           | Err e => Err e
           end
-          (*Ok (fn (List.map (fun c => N0) l)) *)
-(*(map (fun (c' : comb_exp) => interpret c g s) l)*)
       | None => Err UnboundNameError
       end
   | Bind x c1 c2 => 
       match interpret c1 g s with
-      | Ok v => interpret c2 (M.add x v g) s
-      | Err => Err
+      | Ok v => interpret c2 (x |-> v; g) s
+      | Err e => Err e
       end
   end.
+(* }}} *)
 
-Definition empty_state_var := M.empty N.
-Definition empty_state_fn := M.empty (list N -> N).
+(* Default Lib {{{ *)
+Definition N1 : N := N.succ N0.
 
-Example test_interpret1:
-  interpret <{ let X = N0 in X }> empty_state_var empty_state_fn = Ok N N0.
-Proof. reflexivity. Qed.
-
-Example test_interpret2:
-  interpret <{ X }> (M.add X N0 empty_state_var) empty_state_fn = Ok _ N0.
-Proof. simpl. reflexivity. Qed.
-
-Definition add_fn_id : string := "add".
+Definition add : string := "add".
 Fixpoint add_fn (l : list N) : N :=
   match l with
   | nil => N0
   | h :: l' => N.add h (add_fn l')
   end.
-Definition default_state_fn := M.add add_fn_id add_fn empty_state_fn.
-Definition N1 : N := N.succ N0.
+
+Definition land : string := "land".
+Fixpoint land_fn (l : list N) : N :=
+  match l with
+  | nil => N1
+  | N0 :: l' => N0
+  | _ :: l' => land_fn l'
+  end.
+
+Example land_test1: land_fn [N0; N0] = N0.
+Proof. reflexivity. Qed.
+Example land_test2: land_fn [N0; N1] = N0.
+Proof. reflexivity. Qed.
+Example land_test3: land_fn [N1; N0] = N0.
+Proof. reflexivity. Qed.
+Example land_test4: land_fn [N1; N1] = N1.
+Proof. reflexivity. Qed.
+Example land_test5: land_fn [N.succ N1; N.succ N1] = N1.
+Proof. simpl. reflexivity. Qed.
+
+Definition lor : string := "lor".
+Fixpoint lor_fn (l : list N) : N :=
+  match l with
+  | nil => N0
+  | N0 :: l' => lor_fn l'
+  | _ :: l' => N1
+  end.
+
+Example lor_test1: lor_fn [N0; N0] = N0.
+Proof. reflexivity. Qed.
+Example lor_test2: lor_fn [N0; N1] = N1.
+Proof. reflexivity. Qed.
+Example lor_test3: lor_fn [N1; N0] = N1.
+Proof. reflexivity. Qed.
+Example lor_test4: lor_fn [N1; N1] = N1.
+Proof. reflexivity. Qed.
+Example lor_test5: lor_fn [N.succ N1; N.succ N1] = N1.
+Proof. simpl. reflexivity. Qed.
+
+(* FIXME all N > N0 are coerced to True in the current impl *)
+(* FIXME the list implementation doesn't allow for nice matching with lnot *)
+
+Definition default_env := (
+  add |-> add_fn;
+  land |-> land_fn;
+  lor |-> lor_fn
+).
+(* }}} *)
+
+(* Interpreter - Test {{{ *)
+Example test_interpret1:
+  interpret (Bind X0 N0 (X0)) M.empty default_env = Ok N0.
+Proof. simpl. reflexivity. Qed.
+
+Example test_interpret2:
+  interpret (Var X0) (X0 |-> N0) default_env = Ok N0.
+Proof. simpl. reflexivity. Qed.
 
 Example test_interpret3:
- interpret (Bind X N1 (Call "add" [Var X; Var X])) empty_state_var default_state_fn = Ok _ (N.succ (N.succ N0)).
+  interpret (
+    Bind X0 N1 (Call add [Var X0; Var X0])
+  ) M.empty default_env = Ok (N.succ (N.succ N0)).
 Proof. simpl. reflexivity. Qed.
 
 Example test_interpret4:
- interpret <{ let X = N1 in add_fn_id [X;X] }> empty_state_var empty_state_fn = Ok (N.succ (N.succ N0)).
-Proof. reflexivity. Qed.
+  interpret (
+    Bind X0 N0 (
+      Bind X1 N1 (
+        Call add [Call land [Var X0; Var X1]; Call lor [Var X0; Var X1]]
+      )
+    )
+  ) M.empty default_env = Ok N1.
+Proof. simpl. reflexivity. Qed.
 
-(* interpret (AND [1; 1]) {} s = Ok 1 *)
+Example test_interpret5:
+  interpret (
+    Call land [Constant N0; Constant N0]
+  ) M.empty default_env = Ok N0.
+Proof. simpl. reflexivity. Qed.
+
+(* FIXME: another issue is that I don't fully understand how the parser works *)
+Example test_interpret_parse1:
+  interpret <{ let X0 := N0 in X0 }> M.empty default_env = Ok N0.
+Proof. simpl. reflexivity. Qed.
+
+Example test_interpret_parse2:
+  interpret <{ X0 }> (X0 |-> N0) default_env = Ok N0.
+Proof. simpl. reflexivity. Qed.
+
+(*Example test_interpret_parseN:
+ interpret <{ let X := N1 in land [X;X] }> M.empty default_env = Ok (N.succ (N.succ N0)).
+   Proof. reflexivity. Qed.*)
+
 (* }}} *)
 
   (*
@@ -185,3 +270,6 @@ Proof. reflexivity. Qed.
 - The result can just be a special entry in the returned state of type Gamma.
 *)
 
+(* interpret (AND [1; 1]) {} s = Ok 1 *)
+
+End CombExp.
