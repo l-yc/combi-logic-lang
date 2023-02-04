@@ -4,6 +4,7 @@ From Coq Require Import Strings.String.
 From Coq Require Import FSets.FMapList.
 From Coq Require Import Structures.OrderedTypeEx.
 
+Require Import CombExp.IdentParsing.
 
 Module CombExp.
 
@@ -60,22 +61,27 @@ Definition call_fn : comb_exp :=
 Coercion Constant : N >-> comb_exp.
 Coercion Var : string >-> comb_exp.
 
+Open Scope string.
+Check "test" : comb_exp.
+
 Declare Custom Entry com.
 Declare Scope com_scope.
 
-Notation "<{ e }>" := e (at level 0, e custom com at level 99) : com_scope.
-Notation "( x )" := x (in custom com, x at level 99) : com_scope.
-Notation "x" := x (in custom com at level 0, x constr at level 0) : com_scope.
+Notation "'<{' e '}>'" := e (at level 0, e custom com at level 99) : com_scope.
+Notation "x" := (Var (ident_to_string! x)) (in custom com at level 0, x constr at level 0) : com_scope.
+Notation "'#' x" := (Constant x) (in custom com at level 0, x constr at level 0) : com_scope.
+(* Notation "x" := x (in custom com at level 0, x constr at level 0) : com_scope.
+ *)
 (*Notation "f args" := (Call f args)
   (in custom com at level 0, only parsing,
    f constr at level 0, args constr at level 9) : com_scope.*)
-Notation "f x .. y" := (Call f (cons x .. (cons y nil) ..))
-  (in custom com at level 0, only parsing,
-  f constr at level 0, x constr at level 9,
-  y constr at level 9) : com_scope.
-Notation "'let' x ':=' y 'in' e"  := (Bind x y e)
+Notation "'@' f x .. y" := (Call (ident_to_string! f) (cons x .. (cons y nil) ..))
+  (in custom com at level 10, only parsing,
+  f constr at level 0, x custom com at level 9,
+  y custom com at level 9) : com_scope.
+Notation "'let' x ':=' y 'in' e"  := (Bind (ident_to_string! x) y e)
   (in custom com at level 0, x constr at level 0,
-  y at level 85, no associativity) : com_scope.
+  y custom com at level 85, e custom com at level 85, no associativity) : com_scope.
 
 (*Notation "x + y"   := (APlus x y) (in custom com at level 50, left associativity).
 Notation "x - y"   := (AMinus x y) (in custom com at level 50, left associativity).
@@ -94,8 +100,8 @@ Notation "x && y"  := (BAnd x y) (in custom com at level 80, left associativity)
 Open Scope com_scope.
 
 (* Tests {{{ *)
-Definition X0 : string := "X0".
-Definition X1 : string := "X1".
+(*Definition X0 : string := "X0".
+   Definition X1 : string := "X1".*)
 Definition example_comb_exp1 : comb_exp := <{ N0 }>.
 Definition example_comb_exp2 : comb_exp := <{ X0 }>.
 Definition example_comb_exp3 : comb_exp := <{ let X0 := N0 in N0 }>.
@@ -109,9 +115,9 @@ Definition env: Type := M.t comb_fn.
 
 Arguments M.empty {elt}.
 
-Notation "x '|->' v ';' m" := (M.add x v m)
+Notation "x '|->' v ';' m" := (M.add (ident_to_string! x) v m)
   (at level 100, v at next level, right associativity).
-Notation "x '|->' v" := (M.add x v M.empty)
+Notation "x '|->' v" := (M.add (ident_to_string! x) v M.empty)
   (at level 100).
 (* }}} *)
 
@@ -178,7 +184,7 @@ Fixpoint interpret (c : comb_exp) (g : state) (s : env) : result N :=
       end
   | Bind x c1 c2 => 
       match interpret c1 g s with
-      | Ok v => interpret c2 (x |-> v; g) s
+      | Ok v => interpret c2 (M.add x v g) s
       | Err e => Err e
       end
   end.
@@ -187,10 +193,8 @@ Fixpoint interpret (c : comb_exp) (g : state) (s : env) : result N :=
 (* Default Lib {{{ *)
 Definition N1 : N := N.succ N0.
 
-Definition add : string := "add".
 Definition add_fn (a b : N) : N := N.add a b.
 
-Definition land : string := "land".
 Definition land_fn (a b : N) : N :=
   match a, b with
   | N0, N0 => N0
@@ -199,15 +203,13 @@ Definition land_fn (a b : N) : N :=
   | _, _ => N1
   end.
 
-Definition lor : string := "lor".
-Fixpoint lor_fn (a b : N) : N :=
+Definition lor_fn (a b : N) : N :=
   match a, b with
   | N0, N0 => N0
   | _, _ => N1
   end.
 
-Definition lnot : string := "lor".
-Fixpoint lnot_fn (a : N) : N :=
+Definition lnot_fn (a : N) : N :=
   match a with
   | N0 => N1
   | _ => N0
@@ -225,38 +227,38 @@ Definition default_env : env := (
 
 (* Interpreter - Test {{{ *)
 Example test_interpret1:
-  interpret (Bind X0 N0 (X0)) M.empty default_env = Ok N0.
-Proof. simpl. reflexivity. Qed.
+  interpret (Bind "X0" N0 ("X0")) M.empty default_env = Ok N0.
+Proof. unfold interpret. simpl. reflexivity. Qed.
 
 Example test_interpret2:
-  interpret (Var X0) (X0 |-> N0) default_env = Ok N0.
+  interpret (Var "X0") (X0 |-> N0) default_env = Ok N0.
 Proof. simpl. reflexivity. Qed.
 
 Example test_interpret3:
   interpret (
-    Bind X0 N1 (Call add [Var X0; Var X0])
+    Bind "X0" 1 (Call "add" ["X0" : comb_exp; "X0" : comb_exp])
   ) M.empty default_env = Ok (N.succ (N.succ N0)).
 Proof. simpl. reflexivity. Qed.
 
 Example test_interpret4:
   interpret (
-    Bind X0 N0 (
-      Bind X1 N1 (
-        Call add [Call land [Var X0; Var X1]; Call lor [Var X0; Var X1]]
+    Bind "X0" N0 (
+      Bind "X1" 1 (
+        Call "add" [Call "land" [Var "X0"; Var "X1"]; Call "lor" [Var "X0"; Var "X1"]]
       )
     )
-  ) M.empty default_env = Ok N1.
+  ) M.empty default_env = Ok 1.
 Proof. simpl. reflexivity. Qed.
 
 Example test_interpret5:
   interpret (
-    Call land [Constant N0; Constant N0]
+    Call "land" [Constant N0; Constant N0]
   ) M.empty default_env = Ok N0.
 Proof. simpl. reflexivity. Qed.
 
 Example test_interpret6:
   interpret (
-    Call land [Constant N0; Constant N0; Constant N0]
+    Call "land" [Constant N0; Constant N0; Constant N0]
   ) M.empty default_env = Err TypeError.
 Proof. simpl. reflexivity. Qed.
 
@@ -264,7 +266,7 @@ Proof. simpl. reflexivity. Qed.
 another issue is that I don't fully understand how the parser works 
 so I can't get the string working and have to work around by defining X0 X1 *)
 Example test_interpret_parse1:
-  interpret <{ let X0 := N0 in X0 }> M.empty default_env = Ok N0.
+  interpret <{ let X0 := #0 in X0 }> M.empty default_env = Ok N0.
 Proof. simpl. reflexivity. Qed.
 
 Example test_interpret_parse2:
@@ -272,16 +274,14 @@ Example test_interpret_parse2:
 Proof. simpl. reflexivity. Qed.
 
 Example test_interpret_parse3:
-  interpret <{ land (Var X0) (Var X0) }> (X0 |-> N0) default_env = Ok N0.
+  interpret <{ @land X0 X0 }> (X0 |-> N0) default_env = Ok N0.
 (*interpret <{ land (Var X0) (Var X0) }> (X0 |-> N0) default_env = Ok N0.*)
 Proof. simpl. reflexivity. Qed.
 
-(*Example test_interpret_parseN:
- interpret <{ let X0 := N1 in land X0 X0 }> M.empty default_env = Ok (N.succ (N.succ N0)).
-   Proof. reflexivity. Qed.*)
+Example test_interpret_parseN:
+  interpret <{ let X0 := #1 in @land X0 X0 }> M.empty default_env = Ok 1.
+Proof. simpl. reflexivity. Qed.
 
 (* }}} *)
-
-(* interpret (AND [1; 1]) {} s = Ok 1 *)
 
 End CombExp.
