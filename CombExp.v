@@ -263,57 +263,53 @@ Fixpoint interpret (e : node_exp) (g : state) (s : env) : result state :=
   | _ => Err InvalidModuleError
   end.
 
-Inductive KV : Type :=
-  | kv (k : string) (v : N)
-  .
-
-Definition run' (e : node_exp) (g : state) (s : env) : result (list N) :=
-  match e with
-  | NMod (NInput i) (NOutput o) c =>
-      match all_ok_or_first (List.map (fun (n : string) => 
-        match M.find n g with 
-        | Some x => Ok (kv n x)
-        | _ => Err IOError 
-        end) i) with
-      | Ok i' =>
-        let g' := List.fold_right (fun kv m => match kv with 
-                                    | kv k v => M.add k v m
-                                    end) M.empty i' in
-        match interpret c g' s with
-        | Ok v => all_ok_or_first (List.map (fun n => 
-          match M.find n v with 
-          | Some x => Ok x
-          | _ => Err IOError 
-          end) o)
-        | Err e => Err e
-        end
-      | _ => Err IOError
-      end
-  | _ => Err InvalidModuleError
-  end.
-
 Fixpoint zip {A} {B} (a : list A) (b : list B) : list (A * B) :=
   match a, b with
   | ha :: ta, hb :: tb => (ha, hb) :: zip ta tb
   | _, _ => []
   end.
 
+Fixpoint map_ok {A} {B} (r : result A) (f : A -> B) : result B :=
+  match r with
+  | Ok a => Ok (f a)
+  | Err e => Err e
+  end.
+
+Fixpoint flat_map_ok {A} {B} (r : result A) (f : A -> result B) : result B :=
+  match r with
+  | Ok a => f a
+  | Err e => Err e
+  end.
+
+Fixpoint values_to_state (args : list string) (values : list N) : result state :=
+  (*List.fold_right (fun kv m => match kv with 
+                               | (k, v) => M.add k v m
+     end) M.empty (zip args values).*)
+  match args, values with
+  | k :: args', v :: values' => map_ok (values_to_state args' values') (M.add k v)
+  | nil, nil => Ok M.empty
+  | _, _ => Err IOError
+     end.
+
+Fixpoint state_to_values (args : list string) (g : state) : result (list N) :=
+  match args with
+  | k :: args' => match M.find k g with
+                  | Some x => map_ok (state_to_values args' g) (fun l => x :: l)
+                  | _ => Err IOError
+                  end
+  | nil => Ok nil
+  end.
+  (*all_ok_or_first (List.map (fun n => match M.find n g with 
+                                      | Some x => Ok x
+                                      | _ => Err IOError 
+     end) args).*)
+
 Definition run (e : node_exp) (inp : list N) (s : env) : result (list N) :=
   match e with
   | NMod (NInput i) (NOutput o) c =>
-        let g' := List.fold_right (
-          fun kv m => match kv with 
-                      | (k, v) => M.add k v m
-                      end
-        ) M.empty (zip i inp) in
-        match interpret c g' s with
-        | Ok v => all_ok_or_first (List.map (fun n => 
-          match M.find n v with 
-          | Some x => Ok x
-          | _ => Err IOError 
-          end) o)
-        | Err e => Err e
-        end
+      flat_map_ok
+      (flat_map_ok (values_to_state i inp) (fun g => interpret c g s))
+      (state_to_values o)
   | _ => Err InvalidModuleError
   end.
 (* }}} *)
@@ -439,34 +435,6 @@ Definition interpret_test1 : node_exp :=
 
 Definition interpret_test2 : node_exp := 
   <{ node n0 : #0; node n1 : #1 }>.
-
-Definition lshift_exp' (x i : list N) := 
-  match x, i with 
-  | [x0; x1; x2; x3], [i0; i1] => run' <{
-        input $x0 $x1 $x2 $x3 $i0 $i1;
-        output $b0 $b1 $b2 $b3;
-
-        node a0 : ? i0 -> x0 : #0;
-        node a1 : ? i0 -> x1 : x0;
-        node a2 : ? i0 -> x2 : x1;
-        node a3 : ? i0 -> x3 : x2;
-
-        node b0 : ? i1 -> a0 : #0;
-        node b1 : ? i1 -> a1 : #0;
-        node b2 : ? i1 -> a2 : a0;
-        node b3 : ? i1 -> a3 : a1
-      }> 
-      (
-        x0 |-> x0;
-        x1 |-> x1;
-        x2 |-> x2;
-        x3 |-> x3;
-        i0 |-> i0;
-        i1 |-> i1
-      )
-      default_env
-  | _, _ => Err InvalidArgumentError
-  end.
 
 Definition lshift_exp (x i : list N) := 
   run <{
