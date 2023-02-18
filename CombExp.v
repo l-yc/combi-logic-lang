@@ -507,11 +507,42 @@ Proof. simpl. reflexivity. Qed.
 Example lshift_exp_test3: 
   lshift_exp [1; 1; 0; 0] [1; 1] = Ok [0; 0; 0; 1].
 Proof. simpl. reflexivity. Qed.
+
+(* helpers for proving equivalence with Coq library functions {{{ *)
+Local Open Scope positive_scope.
+Compute 1~1~0.
+
+Fixpoint pos_to_bv (p : positive) : list N :=
+  match p with
+  | 1 => [1%N]
+  | p~0 => 0%N :: pos_to_bv p
+  | p~1 => 1%N :: pos_to_bv p
+  end.
+
+Fixpoint N_to_bv (n : N) : list N :=
+  match n with
+  | N0 => [0%N]
+  | Npos p => pos_to_bv p
+  end.
+
+Fixpoint zeroes (n : nat) : list N :=
+  match n with
+  | O => []
+  | S n' => 0%N :: zeroes n'
+  end.
+
+Definition N_to_bvM (n : N) (m : nat) : list N :=
+  let l := N_to_bv n in
+  List.app l (zeroes (m - (List.length l))).
+
+Close Scope positive_scope.
+
+Compute N_to_bvM 10 32. (* N to fixed length bit vectors *)
+(* }}} *)
+
 (* }}} *)
 
 (* Optimizations {{{ *)
-Compute N.shiftl 5 2.
-
 Fixpoint const_prop (c : comb_exp) : comb_exp :=
   match c with
   | Constant x => c
