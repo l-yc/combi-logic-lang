@@ -1,14 +1,17 @@
-From Coq Require Import NArith.BinNat.
-From Coq Require Import BinNums.
+Require Import Eqdep String NArith Arith Lia Program Relations.
+
+Require Import Coq.NArith.NArith. Open Scope N_scope.
+(*From Coq Require Import NArith.BinNat.
+   From Coq Require Import BinNums.*)
 From Coq Require Import Strings.String.
 From Coq Require Import FSets.FMapList.
-From Coq Require Import Structures.OrderedTypeEx.
+   From Coq Require Import Structures.OrderedTypeEx.
 
 Require Import CombExp.IdentParsing.
 
 Module CombExp.
 
-Local Open Scope N_scope.
+(*Local Open Scope N_scope.*)
 
 (* Shorthands - List {{{ *)
 Notation "x :: l" := (cons x l)
@@ -42,8 +45,15 @@ Inductive comb_exp : Type :=
   | Constant (x : N)
   | Var (x : string)
   | Call (f : string) (l : list comb_exp)
-  | Bind (x : string) (c1 : comb_exp) (c2 : comb_exp)
+  | Bind (x : string) (c0 : comb_exp) (c2 : comb_exp)
   | Mux (cs : comb_exp) (c1 : comb_exp) (c2 : comb_exp)
+  (* Common unary/binary operations *)
+  | Not (c1 : comb_exp)
+  | And (c1 : comb_exp) (c2 : comb_exp)
+  | Or (c1 : comb_exp) (c2 : comb_exp)
+  | Xor (c1 : comb_exp) (c2 : comb_exp)
+  | Nand (c1 : comb_exp) (c2 : comb_exp)
+  | Nor (c1 : comb_exp) (c2 : comb_exp)
   .
 
 Inductive node_exp : Type :=
@@ -188,6 +198,24 @@ Inductive result (T : Type) : Type :=
 Arguments Ok {T}.
 Arguments Err {T}.
 
+Fixpoint zip {A} {B} (a : list A) (b : list B) : list (A * B) :=
+  match a, b with
+  | ha :: ta, hb :: tb => (ha, hb) :: zip ta tb
+  | _, _ => []
+  end.
+
+Fixpoint map_ok {A} {B} (r : result A) (f : A -> B) : result B :=
+  match r with
+  | Ok a => Ok (f a)
+  | Err e => Err e
+  end.
+
+Fixpoint flat_map_ok {A} {B} (r : result A) (f : A -> result B) : result B :=
+  match r with
+  | Ok a => f a
+  | Err e => Err e
+  end.
+
 Fixpoint all_ok_or_first {T : Type} (l : list (result T)) : result (list T) :=
   match l with
   | nil => Ok nil
@@ -201,6 +229,51 @@ Fixpoint all_ok_or_first {T : Type} (l : list (result T)) : result (list T) :=
       | Err e => Err e
       end
   end.
+(* }}} *)
+
+(* Default Lib {{{ *)
+Definition add_fn (a b : N) : N := N.add a b.
+
+Definition lnot_fn (a : N) : N :=
+  match a mod 2 with
+  | 0 => 1
+  | _ => 0
+  end.
+
+Definition land_fn (a b : N) : N :=
+  match a mod 2, b mod 2 with
+  | 0, 0 => 0
+  | 0, _ => 0
+  | _, 0 => 0
+  | _, _ => 1
+  end.
+
+Definition lor_fn (a b : N) : N :=
+  match a mod 2, b mod 2 with
+  | 0, 0 => 0
+  | _, _ => 1
+  end.
+
+Definition lxor_fn (a b : N) : N :=
+  match a mod 2, b mod 2 with
+  | 0, 0 => 0
+  | 0, _ => 1
+  | _, 0 => 1
+  | _, _ => 0
+  end.
+
+Definition lnand_fn (a b : N) : N :=
+  lnot_fn (land_fn a b).
+
+Definition lnor_fn (a b : N) : N :=
+  lnot_fn (lor_fn a b).
+
+Definition default_env : env := (
+  add |-> fn 2 add_fn;
+  land |-> fn 2 land_fn;
+  lor |-> fn 2 lor_fn;
+  lnot |-> fn 1 lnot_fn
+).
 (* }}} *)
 
 (* Evaluator & Interpreter {{{ *)
@@ -246,6 +319,41 @@ Fixpoint evaluate (c : comb_exp) (g : state) (s : env) : result N :=
                 end
       | Err e => Err e
       end
+
+  | Not c1 => match (evaluate c1 g s) with
+              | Ok v => Ok (lnot_fn v)
+              | Err e => Err e
+              end
+  | And c1 c2 => 
+      match (evaluate c1 g s), (evaluate c2 g s) with
+      | Ok v1, Ok v2 => Ok (land_fn v1 v2)
+      | Err e, _ => Err e
+      | _, Err e => Err e
+      end
+  | Or c1 c2 =>
+      match (evaluate c1 g s), (evaluate c2 g s) with
+      | Ok v1, Ok v2 => Ok (lor_fn v1 v2)
+      | Err e, _ => Err e
+      | _, Err e => Err e
+      end
+  | Xor c1 c2 =>
+      match (evaluate c1 g s), (evaluate c2 g s) with
+      | Ok v1, Ok v2 => Ok (lxor_fn v1 v2)
+      | Err e, _ => Err e
+      | _, Err e => Err e
+      end
+  | Nand c1 c2 => 
+      match (evaluate c1 g s), (evaluate c2 g s) with
+      | Ok v1, Ok v2 => Ok (lnand_fn v1 v2)
+      | Err e, _ => Err e
+      | _, Err e => Err e
+      end
+  | Nor c1 c2 =>
+      match (evaluate c1 g s), (evaluate c2 g s) with
+      | Ok v1, Ok v2 => Ok (lnor_fn v1 v2)
+      | Err e, _ => Err e
+      | _, Err e => Err e
+      end
   end.
 
 Fixpoint interpret (e : node_exp) (g : state) (s : env) : result state :=
@@ -263,28 +371,7 @@ Fixpoint interpret (e : node_exp) (g : state) (s : env) : result state :=
   | _ => Err InvalidModuleError
   end.
 
-Fixpoint zip {A} {B} (a : list A) (b : list B) : list (A * B) :=
-  match a, b with
-  | ha :: ta, hb :: tb => (ha, hb) :: zip ta tb
-  | _, _ => []
-  end.
-
-Fixpoint map_ok {A} {B} (r : result A) (f : A -> B) : result B :=
-  match r with
-  | Ok a => Ok (f a)
-  | Err e => Err e
-  end.
-
-Fixpoint flat_map_ok {A} {B} (r : result A) (f : A -> result B) : result B :=
-  match r with
-  | Ok a => f a
-  | Err e => Err e
-  end.
-
 Fixpoint values_to_state (args : list string) (values : list N) : result state :=
-  (*List.fold_right (fun kv m => match kv with 
-                               | (k, v) => M.add k v m
-     end) M.empty (zip args values).*)
   match args, values with
   | k :: args', v :: values' => map_ok (values_to_state args' values') (M.add k v)
   | nil, nil => Ok M.empty
@@ -299,10 +386,12 @@ Fixpoint state_to_values (args : list string) (g : state) : result (list N) :=
                   end
   | nil => Ok nil
   end.
-  (*all_ok_or_first (List.map (fun n => match M.find n g with 
-                                      | Some x => Ok x
-                                      | _ => Err IOError 
-     end) args).*)
+
+(*Theorem value_to_state_convertible :
+  forall args values g, 
+    values_to_state args values = Ok g ->
+    state_to_values args g = Ok values.
+   Proof. Admitted.*)
 
 Definition run (e : node_exp) (inp : list N) (s : env) : result (list N) :=
   match e with
@@ -312,37 +401,6 @@ Definition run (e : node_exp) (inp : list N) (s : env) : result (list N) :=
       (state_to_values o)
   | _ => Err InvalidModuleError
   end.
-(* }}} *)
-
-(* Default Lib {{{ *)
-Definition add_fn (a b : N) : N := N.add a b.
-
-Definition land_fn (a b : N) : N :=
-  match a mod 2, b mod 2 with
-  | 0, 0 => 0
-  | 0, _ => 0
-  | _, 0 => 0
-  | _, _ => 1
-  end.
-
-Definition lor_fn (a b : N) : N :=
-  match a mod 2, b mod 2 with
-  | 0, 0 => 0
-  | _, _ => 1
-  end.
-
-Definition lnot_fn (a : N) : N :=
-  match a mod 2 with
-  | 0 => 1
-  | _ => 0
-  end.
-
-Definition default_env : env := (
-  add |-> fn 2 add_fn;
-  land |-> fn 2 land_fn;
-  lor |-> fn 2 lor_fn;
-  lnot |-> fn 1 lnot_fn
-).
 (* }}} *)
 
 (* Evaluate - Test {{{ *)
@@ -410,26 +468,6 @@ Proof. simpl. reflexivity. Qed.
 (* }}} *)
 
 (* Shifter {{{ *)
-(* only by 1st bit *)
-Definition lshift_exp_dumb (x i : list N) := 
-  match x, i with 
-  | [x0; x1; x2; x3], [i0; i1] => all_ok_or_first
-      [
-        evaluate <{ ? s -> a : b }> 
-          (s |-> i0; a |-> x0; b |-> 0) default_env;
-        evaluate <{ ? s -> a : b }> 
-          (s |-> i0; a |-> x1; b |-> x0) default_env;
-        evaluate <{ ? s -> a : b }> 
-          (s |-> i0; a |-> x2; b |-> x1) default_env;
-        evaluate <{ ? s -> a : b }> 
-          (s |-> i0; a |-> x3; b |-> x2) default_env
-      ]
-  | _, _ => Err InvalidArgumentError
-  end.
-Example lshift_exp_dumb_test: 
-  lshift_exp_dumb [1; 0; 0; 0] [1; 0] = Ok [0; 1; 0; 0].
-Proof. unfold lshift_exp_dumb. simpl. reflexivity. Qed.
-
 Definition interpret_test1 : node_exp := 
   NSeq (NDef "n0" <{ #0 }>) (NDef "n1" <{ #1 }>).
 
@@ -441,15 +479,15 @@ Definition lshift_exp (x i : list N) :=
     input $x0 $x1 $x2 $x3 $i0 $i1;
     output $b0 $b1 $b2 $b3;
 
-    node a0 : ? i0 -> x0 : #0;
-    node a1 : ? i0 -> x1 : x0;
-    node a2 : ? i0 -> x2 : x1;
-    node a3 : ? i0 -> x3 : x2;
+    node a0: ? i0 -> x0 : #0;
+    node a1: ? i0 -> x1 : x0;
+    node a2: ? i0 -> x2 : x1;
+    node a3: ? i0 -> x3 : x2;
 
-    node b0 : ? i1 -> a0 : #0;
-    node b1 : ? i1 -> a1 : #0;
-    node b2 : ? i1 -> a2 : a0;
-    node b3 : ? i1 -> a3 : a1
+    node b0: ? i1 -> a0 : #0;
+    node b1: ? i1 -> a1 : #0;
+    node b2: ? i1 -> a2 : a0;
+    node b3: ? i1 -> a3 : a1
   }> 
   (x ++ i)
   default_env.
@@ -469,6 +507,132 @@ Proof. simpl. reflexivity. Qed.
 Example lshift_exp_test3: 
   lshift_exp [1; 1; 0; 0] [1; 1] = Ok [0; 0; 0; 1].
 Proof. simpl. reflexivity. Qed.
+(* }}} *)
+
+(* Optimizations {{{ *)
+Compute N.shiftl 5 2.
+
+Fixpoint const_prop (c : comb_exp) : comb_exp :=
+  match c with
+  | Constant x => c
+  | Var x => c
+  | Call f l => c (* non-trivial to prove, since IHs aren't generated *) 
+  (*| Call f l => Call f (List.map const_prop l) *)
+  | Bind x c1 c2 => Bind x (const_prop c1) (const_prop c2)
+
+  | Mux (Constant n) c1 c2 =>
+      match n mod 2 with
+      | 0 => const_prop c1
+      | _ => const_prop c2
+      end
+  | Mux cs c1 c2 => Mux (const_prop cs) (const_prop c1) (const_prop c2)
+  | Not (Constant n) => Constant (lnot_fn n)
+  | Not c => Not (const_prop c)
+  | And (Constant n1) (Constant n2) => Constant (land_fn n1 n2)
+  | And c1 c2 => And (const_prop c1) (const_prop c2)
+  | Or (Constant n1) (Constant n2) => Constant (lor_fn n1 n2)
+  | Or c1 c2 => Or (const_prop c1) (const_prop c2)
+  | Xor (Constant n1) (Constant n2) => Constant (lxor_fn n1 n2)
+  | Xor c1 c2 => Xor (const_prop c1) (const_prop c2)
+  | Nand (Constant n1) (Constant n2) => Constant (lnand_fn n1 n2)
+  | Nand c1 c2 => Nand (const_prop c1) (const_prop c2)
+  | Nor (Constant n1) (Constant n2) => Constant (lnor_fn n1 n2)
+  | Nor c1 c2 => Nor (const_prop c1) (const_prop c2)
+  end.
+
+Ltac explode :=
+  repeat match goal with
+         | [ |- context[match ?E with _ => _ end] ] => destruct E; simpl
+         end.
+
+Ltac match_match :=
+  match goal with
+  | [ |- context[match ?E1 with _ => _ end = match ?E2 with _ => _ end] ] => assert (E1 = E2)
+  end.
+
+  (* Bind *)
+  (*intros.
+
+  try match goal with
+  | [ H: _ |- context[match ?E1 with _ => _ end = match ?E2 with _ => _ end] ] => rewrite H; try destruct E2; try reflexivity
+  end.
+
+  try match goal with
+  | [ H: forall _ _, ?E1 = ?E2 |- context[match ?E1 with _ => _ end = match ?E2 with _ => _ end] ] => rewrite H; destruct ?E2
+  end.
+  
+  rewrite IHc1.
+     destruct evaluate; try rewrite IHc2; reflexivity.*)
+
+Theorem const_prop_ok :
+  forall c g s, evaluate c g s = evaluate (const_prop c) g s.
+Proof.
+  induction c; try reflexivity; simpl.
+
+  (* Call *)
+  (* { intros; destruct (find (elt:=comb_fn) f s); try reflexivity.
+  match_match. f_equal.
+  induction l.
+  - simpl. reflexivity.
+  - simpl. rewrite IHl. f_equal.
+    (* need to prove a stronger version of this -- but we can do that after making this proof cleaner *)
+    admit.
+
+     - rewrite H. reflexivity. } *)
+
+  (* Bind *)
+  intros. rewrite IHc1.
+  destruct evaluate; try rewrite IHc2; reflexivity.
+  
+  (* Mux *)
+  destruct c1; simpl.
+
+  destruct (x mod 2); try apply IHc2; try apply IHc3.
+
+  all: try (intros; explode; try rewrite IHc2; try rewrite IHc3; reflexivity).
+  all: try (intros; match_match; try apply IHc1; rewrite H; explode; try apply IHc2; try apply IHc3; try reflexivity).
+
+  (* Not Gate *)
+  destruct c; simpl; try reflexivity;
+    try (intros; match_match; try apply IHc; rewrite H; explode; try reflexivity).
+
+  (* And Gate *)
+  destruct c1; simpl; try reflexivity; intros.
+  destruct c2; simpl; try reflexivity.
+    all: try (intros; match_match; try apply IHc2; try rewrite H; explode; reflexivity).
+    all: try (intros; try rewrite IHc2; reflexivity).
+    all: try (intros; match_match; try apply IHc1; rewrite H; try rewrite IHc2; reflexivity).
+
+  (* Or Gate *)
+  destruct c1; simpl; try reflexivity; intros.
+  destruct c2; simpl; try reflexivity.
+    all: try (intros; match_match; try apply IHc2; try rewrite H; explode; reflexivity).
+    all: try (intros; try rewrite IHc2; reflexivity).
+    all: try (intros; match_match; try apply IHc1; rewrite H; try rewrite IHc2; reflexivity).
+
+  (* Xor Gate *)
+  destruct c1; simpl; try reflexivity; intros.
+  destruct c2; simpl; try reflexivity.
+    all: try (intros; match_match; try apply IHc2; try rewrite H; explode; reflexivity).
+    all: try (intros; try rewrite IHc2; reflexivity).
+    all: try (intros; match_match; try apply IHc1; rewrite H; try rewrite IHc2; reflexivity).
+
+  (* Nand Gate *)
+  destruct c1; simpl; try reflexivity; intros.
+  destruct c2; simpl; try reflexivity.
+    all: try (intros; match_match; try apply IHc2; try rewrite H; explode; reflexivity).
+    all: try (intros; try rewrite IHc2; reflexivity).
+    all: try (intros; match_match; try apply IHc1; rewrite H; try rewrite IHc2; reflexivity).
+
+  (* Nor Gate *)
+  destruct c1; simpl; try reflexivity; intros.
+  destruct c2; simpl; try reflexivity.
+    all: try (intros; match_match; try apply IHc2; try rewrite H; explode; reflexivity).
+    all: try (intros; try rewrite IHc2; reflexivity).
+    all: try (intros; match_match; try apply IHc1; rewrite H; try rewrite IHc2; reflexivity).
+Qed.
+
+  (* need more automation :( *)
 (* }}} *)
 
 End CombExp.
