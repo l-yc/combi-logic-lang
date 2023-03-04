@@ -56,6 +56,57 @@ Inductive comb_exp : Type :=
   | Nor (c1 : comb_exp) (c2 : comb_exp)
   .
 
+  (*Print comb_exp_ind.*)
+Print List.Forall.
+
+Section list_forall.
+Variable A : Type.
+Variable P : A -> Prop.
+Variable (fn : forall (a : A), P a).
+Fixpoint list_forall (l : list A) : List.Forall P l :=
+  match l with
+  | h :: t => List.Forall_cons h (fn h) (list_forall t)
+  | nil => List.Forall_nil _
+  end.
+End list_forall.
+Print list_forall.
+
+Definition my_comb_exp_ind :=
+fun (P : comb_exp -> Prop) (f : forall x : N, P (Constant x))
+  (f0 : forall x : string, P (Var x))
+  (f1 : forall (f1 : string) (l : list comb_exp) (IHl : List.Forall P l), P (Call f1 l))
+  (f2 : forall (x : string) (c0 : comb_exp),
+        P c0 -> forall c2 : comb_exp, P c2 -> P (Bind x c0 c2))
+  (f3 : forall cs : comb_exp,
+        P cs ->
+        forall c1 : comb_exp,
+        P c1 -> forall c2 : comb_exp, P c2 -> P (Mux cs c1 c2))
+  (f4 : forall c1 : comb_exp, P c1 -> P (Not c1))
+  (f5 : forall c1 : comb_exp,
+        P c1 -> forall c2 : comb_exp, P c2 -> P (And c1 c2))
+  (f6 : forall c1 : comb_exp,
+        P c1 -> forall c2 : comb_exp, P c2 -> P (Or c1 c2))
+  (f7 : forall c1 : comb_exp,
+        P c1 -> forall c2 : comb_exp, P c2 -> P (Xor c1 c2))
+  (f8 : forall c1 : comb_exp,
+        P c1 -> forall c2 : comb_exp, P c2 -> P (Nand c1 c2))
+  (f9 : forall c1 : comb_exp,
+        P c1 -> forall c2 : comb_exp, P c2 -> P (Nor c1 c2)) =>
+fix F (c : comb_exp) : P c :=
+  match c as c0 return (P c0) with
+  | Constant x => f x
+  | Var x => f0 x
+  | Call f10 l => f1 f10 l (list_forall _ P F l)
+  | Bind x c0 c2 => f2 x c0 (F c0) c2 (F c2)
+  | Mux cs c1 c2 => f3 cs (F cs) c1 (F c1) c2 (F c2)
+  | Not c1 => f4 c1 (F c1)
+  | And c1 c2 => f5 c1 (F c1) c2 (F c2)
+  | Or c1 c2 => f6 c1 (F c1) c2 (F c2)
+  | Xor c1 c2 => f7 c1 (F c1) c2 (F c2)
+  | Nand c1 c2 => f8 c1 (F c1) c2 (F c2)
+  | Nor c1 c2 => f9 c1 (F c1) c2 (F c2)
+  end.
+
 Inductive node_exp : Type :=
   | NInput (l : list string)
   | NOutput (l : list string)
@@ -547,8 +598,8 @@ Fixpoint const_prop (c : comb_exp) : comb_exp :=
   match c with
   | Constant x => c
   | Var x => c
-  | Call f l => c (* non-trivial to prove, since IHs aren't generated *) 
-  (*| Call f l => Call f (List.map const_prop l) *)
+      (*| Call f l => c (* non-trivial to prove, since IHs aren't generated *) *)
+  | Call f l => Call f (List.map const_prop l)
   | Bind x c1 c2 => Bind x (const_prop c1) (const_prop c2)
 
   | Mux (Constant n) c1 c2 =>
@@ -598,18 +649,23 @@ Ltac match_match :=
 Theorem const_prop_ok :
   forall c g s, evaluate c g s = evaluate (const_prop c) g s.
 Proof.
-  induction c; try reflexivity; simpl.
+  induction c using my_comb_exp_ind; try reflexivity; simpl.
 
   (* Call *)
-  (* { intros; destruct (find (elt:=comb_fn) f s); try reflexivity.
-  match_match. f_equal.
+  intros; destruct (find (elt:=comb_fn) f1 s); try reflexivity.
+  match_match.
+  
+  f_equal.
   induction l.
-  - simpl. reflexivity.
-  - simpl. rewrite IHl. f_equal.
-    (* need to prove a stronger version of this -- but we can do that after making this proof cleaner *)
-    admit.
 
-     - rewrite H. reflexivity. } *)
+  simpl. reflexivity.
+
+  simpl. inversion IHl. rewrite IHl0. f_equal.
+  apply H1.
+  apply H2.
+
+  rewrite H. reflexivity.
+    (* need to prove a stronger version of this -- but we can do that after making this proof cleaner *)
 
   (* Bind *)
   intros. rewrite IHc1.
