@@ -525,7 +525,7 @@ Definition interpret_test1 : node_exp :=
 Definition interpret_test2 : node_exp := 
   <{ node n0 : #0; node n1 : #1 }>.
 
-Definition lshift_exp (x i : list N) := 
+Definition shiftl4_exp (x i : list N) := 
   run <{
     input $x0 $x1 $x2 $x3 $i0 $i1;
     output $b0 $b1 $b2 $b3;
@@ -543,20 +543,20 @@ Definition lshift_exp (x i : list N) :=
   (x ++ i)
   default_env.
 
-Example lshift_exp_test0: 
-  lshift_exp [1; 1; 0; 0] [0; 0] = Ok [1; 1; 0; 0].
+Example shiftl4_exp_test0: 
+  shiftl4_exp [1; 1; 0; 0] [0; 0] = Ok [1; 1; 0; 0].
 Proof. simpl. reflexivity. Qed.
 
-Example lshift_exp_test1: 
-  lshift_exp [1; 1; 0; 0] [1; 0] = Ok [0; 1; 1; 0].
+Example shiftl4_exp_test1: 
+  shiftl4_exp [1; 1; 0; 0] [1; 0] = Ok [0; 1; 1; 0].
 Proof. simpl. reflexivity. Qed.
 
-Example lshift_exp_test2: 
-  lshift_exp [1; 1; 0; 0] [0; 1] = Ok [0; 0; 1; 1].
+Example shiftl4_exp_test2: 
+  shiftl4_exp [1; 1; 0; 0] [0; 1] = Ok [0; 0; 1; 1].
 Proof. simpl. reflexivity. Qed.
 
-Example lshift_exp_test3: 
-  lshift_exp [1; 1; 0; 0] [1; 1] = Ok [0; 0; 0; 1].
+Example shiftl4_exp_test3: 
+  shiftl4_exp [1; 1; 0; 0] [1; 1] = Ok [0; 0; 0; 1].
 Proof. simpl. reflexivity. Qed.
 
 (* helpers for proving equivalence with Coq library functions {{{ *)
@@ -590,6 +590,159 @@ Close Scope positive_scope.
 
 Compute N_to_bvM 10 32. (* N to fixed length bit vectors *)
 (* }}} *)
+
+Definition modulo_set (n m : N) := n = n mod m.
+
+(*Lemma modulo_set_le: forall n m,
+  m <> 0 -> modulo_set n m <-> n < m.
+Proof.
+  induction n using N.peano_rect; intros.
+  - intros. destruct m eqn:Heq.
+    
+    exfalso. easy.
+
+    split. lia. intros. apply modulo_set_0. assumption.
+   -*)
+
+Lemma modulo_set_one: forall n,
+  modulo_set n 1 -> n = 0.
+Proof.
+  intros.
+  unfold modulo_set in H.
+  rewrite N.mod_1_r in H.
+  assumption.
+Qed.
+
+Lemma lt_explode: forall m n,
+  n < m -> n = m-1 \/ n < m-1.
+Proof.
+  Search (_ mod _).
+  intros.
+  lia.
+Qed.
+
+Lemma modulo_set_lt: forall m n,
+  m <> 0 -> modulo_set n m <-> n < m.
+Proof.
+  unfold modulo_set; split; intros.
+
+  apply N.mod_upper_bound with (a:=n) in H.
+  lia.
+
+  symmetry.
+  apply N.mod_small.
+  assumption.
+Qed.
+
+Lemma modulo_set_explode: forall m n,
+  m > 1 -> modulo_set n m -> n = m-1 \/ modulo_set n (m-1).
+Proof.
+  intros.
+  rewrite modulo_set_lt in H0.
+  rewrite modulo_set_lt.
+
+  all: lia.
+Qed.
+
+Lemma shiftl4_correct_naive: forall n i,
+  modulo_set n 16 ->
+  modulo_set i 4 ->
+  shiftl4_exp (N_to_bvM n 4) (N_to_bvM i 2) = Ok (N_to_bvM ((N.shiftl n i) mod 16) 4).
+Proof.
+  intros n i Hn Hi.
+  repeat match goal with
+  | [Hn: modulo_set n ?E |- _ ] =>
+    match E with
+    | 1 => apply modulo_set_one in Hn as H0
+    | _ => apply modulo_set_explode in Hn;
+            cycle 1; try lia;
+            try destruct Hn as [H0 | Hn]; try simpl in Hn
+    end;
+    try rewrite H0;
+
+    repeat match goal with
+    | [H0: n = _ , Hi: modulo_set i ?E |- _ ] =>
+        match E with
+        | 1 => apply modulo_set_one in Hi as H1
+        | _ => apply modulo_set_explode in Hi;
+                cycle 1; try lia;
+                try destruct Hi as [H1 | Hi]; try simpl in Hi
+        end;
+        try rewrite H1;
+        try reflexivity
+    end
+  end.
+Qed.
+
+(*Lemma shiftl4_correct: forall n i,
+  n = n mod 16 ->
+  i = i mod 4 ->
+  shiftl4_exp (N_to_bvM n 4) (N_to_bvM i 2) = Ok (N_to_bvM (N.shiftl n i) 4).
+Proof.
+  intros.
+
+  unfold shiftl4_exp.
+  unfold run.
+  destruct (N_to_bvM n 4 ++ N_to_bvM i 2)%list eqn:Heq.
+  simpl.
+   Qed.*)
+
+Definition shiftl8_exp (x i : list N) := 
+  run <{
+    input $x0 $x1 $x2 $x3 $x4 $x5 $x6 $x7 $i0 $i1 $i2;
+
+    output $b0 $b1 $b2 $b3 $b4 $b5 $b6 $b7;
+
+    node a0: ? i0 -> x0 : #0;
+    node a1: ? i0 -> x1 : x0;
+    node a2: ? i0 -> x2 : x1;
+    node a3: ? i0 -> x3 : x2;
+    node a4: ? i0 -> x4 : x3;
+    node a5: ? i0 -> x5 : x4;
+    node a6: ? i0 -> x6 : x5;
+    node a7: ? i0 -> x7 : x6;
+
+    node b0: ? i1 -> a0 : #0;
+    node b1: ? i1 -> a1 : #0;
+    node b2: ? i1 -> a2 : a0;
+    node b3: ? i1 -> a3 : a1;
+    node b4: ? i1 -> a4 : a2;
+    node b5: ? i1 -> a5 : a3;
+    node b6: ? i1 -> a6 : a4;
+    node b7: ? i1 -> a7 : a5
+  }> 
+  (x ++ i)
+  default_env.
+
+(*Lemma shiftl8_correct_naive: forall n i,
+  modulo_set n 256 ->
+  modulo_set i 8 ->
+  shiftl4_exp (N_to_bvM n 8) (N_to_bvM i 3) = Ok (N_to_bvM ((N.shiftl n i) mod 256) 8).
+Proof.
+  intros n i Hn Hi.
+  repeat match goal with
+  | [Hn: modulo_set n ?E |- _ ] =>
+    match E with
+    | 1 => apply modulo_set_one in Hn as H0
+    | _ => apply modulo_set_explode in Hn;
+            cycle 1; try lia;
+            try destruct Hn as [H0 | Hn]; try simpl in Hn
+    end;
+    try rewrite H0;
+
+    repeat match goal with
+    | [H0: n = _ , Hi: modulo_set i ?E |- _ ] =>
+        match E with
+        | 1 => apply modulo_set_one in Hi as H1
+        | _ => apply modulo_set_explode in Hi;
+                cycle 1; try lia;
+                try destruct Hi as [H1 | Hi]; try simpl in Hi
+        end;
+        try rewrite H1;
+        try reflexivity
+    end
+  end.
+   Qed.*)
 
 (* }}} *)
 
@@ -632,20 +785,6 @@ Ltac match_match :=
   | [ |- context[match ?E1 with _ => _ end = match ?E2 with _ => _ end] ] => assert (E1 = E2)
   end.
 
-  (* Bind *)
-  (*intros.
-
-  try match goal with
-  | [ H: _ |- context[match ?E1 with _ => _ end = match ?E2 with _ => _ end] ] => rewrite H; try destruct E2; try reflexivity
-  end.
-
-  try match goal with
-  | [ H: forall _ _, ?E1 = ?E2 |- context[match ?E1 with _ => _ end = match ?E2 with _ => _ end] ] => rewrite H; destruct ?E2
-  end.
-  
-  rewrite IHc1.
-     destruct evaluate; try rewrite IHc2; reflexivity.*)
-
 Theorem const_prop_ok :
   forall c g s, evaluate c g s = evaluate (const_prop c) g s.
 Proof.
@@ -665,7 +804,6 @@ Proof.
   apply H2.
 
   rewrite H. reflexivity.
-    (* need to prove a stronger version of this -- but we can do that after making this proof cleaner *)
 
   (* Bind *)
   intros. rewrite IHc1.
