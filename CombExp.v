@@ -1,44 +1,18 @@
-Require Import Eqdep String NArith Arith Lia Program Relations.
+(* Coq Library Types *)
+Require Import NArith String FMapList OrderedTypeEx.
+Require Import Numbers.DecimalString.
 
-Require Import Coq.NArith.NArith. Open Scope N_scope.
-(*From Coq Require Import NArith.BinNat.
-   From Coq Require Import BinNums.*)
-From Coq Require Import Strings.String.
-From Coq Require Import FSets.FMapList.
-   From Coq Require Import Structures.OrderedTypeEx.
+(* Coq Library Tactics *) 
+Require Import Lia.
 
-Require Import CombExp.IdentParsing.
+(* UROP *)
+Require Import UROP.IdentParsing.
+Require Import UROP.Types.
 
 Module CombExp.
 
-(*Local Open Scope N_scope.*)
-
-(* Shorthands - List {{{ *)
-Notation "x :: l" := (cons x l)
-  (at level 60, right associativity).
-Notation "[ ]" := nil.
-Notation "[ x ; .. ; y ]" := (cons x .. (cons y nil) ..).
-(* }}} *)
-
-(* Types - Syntax {{{ *)
-Fixpoint Arity (A B : Type) (n: nat) : Type :=
-  match n with
-  | O => B
-  | S n' => A -> (Arity A B n')
-  end.
-
-Check Arity N N 2.
-
-Inductive comb_fn : Type :=
-  | fn (n : nat) (f : Arity N N n).
-
-(* Alternative inductive definition that isn't used *)
-(* Inductive comb_fn' : Type :=
-  | fn_unit (f : N -> N)
-  | fn_curry (f : N -> comb_fn').
-
-Check (fn_curry (fun (x : N) => fn_unit (fun (y : N) => y))) : comb_fn'. *)
-(* }}} *)
+Local Open Scope N_scope.
+Local Open Scope UROP_scope.
 
 (* Syntax - AST {{{ *)
 Inductive comb_exp : Type :=
@@ -113,6 +87,7 @@ Inductive node_exp : Type :=
   | NDef (n : string) (c : comb_exp)
   | NSeq (e1 e2 : node_exp)
   | NMod (i : node_exp) (o : node_exp) (p : node_exp)
+  | NSkip
   .
 
 (* Tests {{{ *)
@@ -131,7 +106,7 @@ Definition call_fn : comb_exp :=
 Coercion Constant : N >-> comb_exp.
 Coercion Var : string >-> comb_exp.
 
-Open Scope string.
+Local Open Scope string.
 Check "test" : comb_exp.
 
 Declare Custom Entry com.
@@ -161,8 +136,11 @@ Notation "'?' s '->' x ':' y" := (Mux s x y)
 Notation "'node' n ':' c" := (NDef (ident_to_string! n) c)
   (in custom com at level 0, n constr at level 0, 
   c custom com at level 85, no associativity) : com_scope.
-Notation "x ; y" :=
+Notation "x ';' y" :=
   (NSeq x y)
+  (in custom com at level 90, right associativity) : com_scope.
+Notation "'done'" :=
+  (NSkip)
   (in custom com at level 90, right associativity) : com_scope.
 Notation "'$' x" := (ident_to_string! x)
   (in custom com at level 0, x constr at level 0) : com_scope.
@@ -216,70 +194,6 @@ Definition example_node_exp3 : node_exp := <{
   node b1 : @lor a0 a1
 }>.
 (* }}} *)
-(* }}} *)
-
-(* Types - Interpreter State {{{ *)
-Module Import M := FMapList.Make(String_as_OT).
-Definition state: Type := M.t N.
-Definition env: Type := M.t comb_fn.
-
-Arguments M.empty {elt}.
-
-Notation "x '|->' v ';' m" := (M.add (ident_to_string! x) v m)
-  (at level 100, v at next level, right associativity).
-Notation "x '|->' v" := (M.add (ident_to_string! x) v M.empty)
-  (at level 100).
-(* }}} *)
-
-(* Types - Interpreter Result {{{ *)
-Inductive error : Type :=
-  | UnboundNameError
-  | InvalidArgumentError
-  | TypeError
-  | EvaluationError
-  | InvalidModuleError
-  | IOError
-  .
-
-Inductive result (T : Type) : Type :=
-  | Ok (v : T)
-  | Err (e : error)
-  .
-
-Arguments Ok {T}.
-Arguments Err {T}.
-
-Fixpoint zip {A} {B} (a : list A) (b : list B) : list (A * B) :=
-  match a, b with
-  | ha :: ta, hb :: tb => (ha, hb) :: zip ta tb
-  | _, _ => []
-  end.
-
-Fixpoint map_ok {A} {B} (r : result A) (f : A -> B) : result B :=
-  match r with
-  | Ok a => Ok (f a)
-  | Err e => Err e
-  end.
-
-Fixpoint flat_map_ok {A} {B} (r : result A) (f : A -> result B) : result B :=
-  match r with
-  | Ok a => f a
-  | Err e => Err e
-  end.
-
-Fixpoint all_ok_or_first {T : Type} (l : list (result T)) : result (list T) :=
-  match l with
-  | nil => Ok nil
-  | h :: l' => 
-      match h with
-      | Ok v1 => 
-          match all_ok_or_first l' with
-          | Ok v2 => Ok (v1 :: v2)
-          | Err e => Err e
-          end
-      | Err e => Err e
-      end
-  end.
 (* }}} *)
 
 (* Default Lib {{{ *)
@@ -419,6 +333,7 @@ Fixpoint interpret (e : node_exp) (g : state) (s : env) : result state :=
       | Ok g' => interpret e2 g' s
       | Err e => Err e
       end
+  | NSkip => Ok g
   | _ => Err InvalidModuleError
   end.
 
@@ -518,48 +433,7 @@ Example test_evaluate_parse5:
 Proof. simpl. reflexivity. Qed.
 (* }}} *)
 
-(* Shifter {{{ *)
-Definition interpret_test1 : node_exp := 
-  NSeq (NDef "n0" <{ #0 }>) (NDef "n1" <{ #1 }>).
-
-Definition interpret_test2 : node_exp := 
-  <{ node n0 : #0; node n1 : #1 }>.
-
-Definition shiftl4_exp (x i : list N) := 
-  run <{
-    input $x0 $x1 $x2 $x3 $i0 $i1;
-    output $b0 $b1 $b2 $b3;
-
-    node a0: ? i0 -> x0 : #0;
-    node a1: ? i0 -> x1 : x0;
-    node a2: ? i0 -> x2 : x1;
-    node a3: ? i0 -> x3 : x2;
-
-    node b0: ? i1 -> a0 : #0;
-    node b1: ? i1 -> a1 : #0;
-    node b2: ? i1 -> a2 : a0;
-    node b3: ? i1 -> a3 : a1
-  }> 
-  (x ++ i)
-  default_env.
-
-Example shiftl4_exp_test0: 
-  shiftl4_exp [1; 1; 0; 0] [0; 0] = Ok [1; 1; 0; 0].
-Proof. simpl. reflexivity. Qed.
-
-Example shiftl4_exp_test1: 
-  shiftl4_exp [1; 1; 0; 0] [1; 0] = Ok [0; 1; 1; 0].
-Proof. simpl. reflexivity. Qed.
-
-Example shiftl4_exp_test2: 
-  shiftl4_exp [1; 1; 0; 0] [0; 1] = Ok [0; 0; 1; 1].
-Proof. simpl. reflexivity. Qed.
-
-Example shiftl4_exp_test3: 
-  shiftl4_exp [1; 1; 0; 0] [1; 1] = Ok [0; 0; 0; 1].
-Proof. simpl. reflexivity. Qed.
-
-(* helpers for proving equivalence with Coq library functions {{{ *)
+(* HLL {{{ *)
 Local Open Scope positive_scope.
 Compute 1~1~0.
 
@@ -570,39 +444,142 @@ Fixpoint pos_to_bv (p : positive) : list N :=
   | p~1 => 1%N :: pos_to_bv p
   end.
 
+Close Scope positive_scope.
+
 Fixpoint N_to_bv (n : N) : list N :=
   match n with
-  | N0 => [0%N]
+  | N0 => [0]
   | Npos p => pos_to_bv p
   end.
 
 Fixpoint zeroes (n : nat) : list N :=
   match n with
   | O => []
-  | S n' => 0%N :: zeroes n'
+  | S n' => 0 :: zeroes n'
   end.
 
 Definition N_to_bvM (n : N) (m : nat) : list N :=
   let l := N_to_bv n in
-  List.app l (zeroes (m - (List.length l))).
+  let len := (List.length l) in
+  if Nat.leb len m then List.app l (zeroes (m - len)) else List.firstn (m - len) l.
 
-Close Scope positive_scope.
+Fixpoint bv_to_N (bv : list N) : N :=
+  match bv with
+  | [] => 0
+  | h :: t => (bv_to_N t) * 2 + h
+  end.
+
+Lemma N_bv_equiv : forall n,
+  n = bv_to_N (N_to_bv n).
+Proof.
+  destruct n; trivial; simpl.
+  induction p; simpl; try lia.
+Qed.
+
+Lemma zeroes_is_zero : forall n,
+  bv_to_N (zeroes n) = 0.
+Proof.
+  induction n; simpl; lia.
+Qed.
+
+(* MARK trying to prove bitvector equiv *)
+Lemma bv_size_equiv : forall n,
+  n <> 0
+  -> List.length (N_to_bv n) = N.to_nat (N.size n).
+Proof.
+  intros n HP.
+  induction n; simpl; try lia.
+  induction p; simpl; try lia.
+Qed.
+
+Lemma N_bv_nz : forall n,
+  (List.length (N_to_bv n)) <> 0%nat.
+Proof.
+  induction n; simpl; eauto.
+  induction p; simpl; eauto.
+Qed.
+
+Lemma N_bv_add : forall n m,
+  n <> 0 /\ m <> 0
+  -> le (List.length (N_to_bv (n + m)))
+  ((max (List.length (N_to_bv n)) (List.length (N_to_bv m))) + 1).
+Proof.
+  intros.
+  rewrite! bv_size_equiv by lia.
+  destruct (N.leb n m) eqn:Heq.
+  - rewrite N.leb_le in Heq.
+
+    replace (Nat.max (N.to_nat (N.size n)) (N.to_nat (N.size m))) with (N.to_nat (N.size m)).
+
+    apply PeanoNat.Nat.le_trans with (m := (N.to_nat (N.size (2 * m + 1)))).
+    admit.
+
+    rewrite! N.size_log2 by lia.
+    rewrite N.log2_succ_double by lia.
+    lia.
+
+    (*induction n; simpl.
+  - induction m; simpl; try lia.
+    induction p; simpl; lia.
+  - induction m; simpl; try lia.
+
+    induction p; simpl; induction p0; simpl; eauto.
+
+    lia.
+
+  (*induction n; simpl; try induction p; simpl; 
+     induction m; simpl; try induction p0; simpl; eauto.*)
+
+  - destruct (Datatypes.length (N_to_bv m)) eqn:Heq.
+       rewrite*)
+Admitted.
+
+Lemma N_bv_len : forall m,
+  gt m 0
+  -> (forall n, 0 < n < (N.shiftl 1 (N.of_nat m))
+  -> le (List.length (N_to_bv n)) m).
+Proof.
+  induction m; simpl; intros.
+  - assert (n = 0) by lia; subst.
+    lia.
+  - rewrite bv_size_equiv by lia.
+    
+    admit.
+Admitted.
+
+Theorem N_bvM_equiv : forall m,
+  gt m 0
+  -> (forall n, n < (N.shiftl 1 (N.of_nat m))
+  -> n = bv_to_N (N_to_bvM n m)).
+Proof.
+  induction m; simpl; intros.
+  - assert (n = 0) by lia.
+    subst.
+    trivial.
+  - unfold N_to_bvM.
+    
+    case n; simpl.
+    rewrite zeroes_is_zero; lia.
+    intros.
+    admit.
+  (*intros.
+  destruct n.
+
+  induction m using N.peano_ind; eauto.
+  unfold N_to_bvM.
+  case (Nat.leb (Datatypes.length (N_to_bv 0)) (N.to_nat (N.succ m))); simpl.
+  { rewrite zeroes_is_zero; lia. }
+  { replace (Nat.sub (N.to_nat (N.succ m)) 1) with (N.to_nat m) by lia.
+    case (N.to_nat m); eauto.
+    intros; case n; simpl; lia. }
+
+  induction p; simpl.
+     simpl in H.*)
+Admitted.
 
 Compute N_to_bvM 10 32. (* N to fixed length bit vectors *)
-(* }}} *)
 
 Definition modulo_set (n m : N) := n = n mod m.
-
-(*Lemma modulo_set_le: forall n m,
-  m <> 0 -> modulo_set n m <-> n < m.
-Proof.
-  induction n using N.peano_rect; intros.
-  - intros. destruct m eqn:Heq.
-    
-    exfalso. easy.
-
-    split. lia. intros. apply modulo_set_0. assumption.
-   -*)
 
 Lemma modulo_set_one: forall n,
   modulo_set n 1 -> n = 0.
@@ -643,11 +620,53 @@ Proof.
 
   all: lia.
 Qed.
+(* }}} *)
+
+(* Shifter {{{ *)
+Definition interpret_test1 : node_exp := 
+  NSeq (NDef "n0" <{ #0 }>) (NDef "n1" <{ #1 }>).
+
+Definition interpret_test2 : node_exp := 
+  <{ node n0 : #0; node n1 : #1 }>.
+
+Definition shiftl4 (x i : list N) := 
+  run <{
+    input $x0 $x1 $x2 $x3 $i0 $i1;
+    output $b0 $b1 $b2 $b3;
+
+    node a0: ? i0 -> x0 : #0;
+    node a1: ? i0 -> x1 : x0;
+    node a2: ? i0 -> x2 : x1;
+    node a3: ? i0 -> x3 : x2;
+
+    node b0: ? i1 -> a0 : #0;
+    node b1: ? i1 -> a1 : #0;
+    node b2: ? i1 -> a2 : a0;
+    node b3: ? i1 -> a3 : a1
+  }> 
+  (x ++ i)
+  default_env.
+
+Example shiftl4_test0: 
+  shiftl4 [1; 1; 0; 0] [0; 0] = Ok [1; 1; 0; 0].
+Proof. simpl. reflexivity. Qed.
+
+Example shiftl4_test1: 
+  shiftl4 [1; 1; 0; 0] [1; 0] = Ok [0; 1; 1; 0].
+Proof. simpl. reflexivity. Qed.
+
+Example shiftl4_test2: 
+  shiftl4 [1; 1; 0; 0] [0; 1] = Ok [0; 0; 1; 1].
+Proof. simpl. reflexivity. Qed.
+
+Example shiftl4_test3: 
+  shiftl4 [1; 1; 0; 0] [1; 1] = Ok [0; 0; 0; 1].
+Proof. simpl. reflexivity. Qed.
 
 Lemma shiftl4_correct_naive: forall n i,
   modulo_set n 16 ->
   modulo_set i 4 ->
-  shiftl4_exp (N_to_bvM n 4) (N_to_bvM i 2) = Ok (N_to_bvM ((N.shiftl n i) mod 16) 4).
+  shiftl4 (N_to_bvM n 4) (N_to_bvM i 2) = Ok (N_to_bvM ((N.shiftl n i) mod 16) 4).
 Proof.
   intros n i Hn Hi.
   repeat match goal with
@@ -674,76 +693,74 @@ Proof.
   end.
 Qed.
 
-(*Lemma shiftl4_correct: forall n i,
-  n = n mod 16 ->
-  i = i mod 4 ->
-  shiftl4_exp (N_to_bvM n 4) (N_to_bvM i 2) = Ok (N_to_bvM (N.shiftl n i) 4).
+(* Generic shifter *)
+
+Definition to_string (n : N) := NilZero.string_of_uint (N.to_uint n).
+
+Definition var_names (prefix : string) (n : N) : list string := 
+  List.rev (
+    N.recursion
+      []
+      (fun n' l => (prefix ++ to_string n') :: l)
+      n
+  ).
+
+Example var_names_1: 
+  var_names "x" 3 = ["x0"; "x1"; "x2"].
+Proof. reflexivity. Qed.
+
+Definition shiftl_list (n : N) (l : list comb_exp) :=
+  let tmp := N.recursion l (fun n' l' => <{ #0 }> :: l') n in
+  N.recursion 
+    tmp 
+    (fun _ l' => List.removelast l')
+    (N.of_nat (List.length tmp - List.length l)).
+
+Compute shiftl_list 2 [Var "x0"; Var "x1"; Var "x2"; Var "x3"].
+
+Fixpoint shiftl_layer (svar : comb_exp) (io : list (string * (comb_exp * comb_exp))) (base : node_exp) : node_exp :=
+  match io with
+  | [] => base
+  | (ovar, (i0var, i1var)) :: t => 
+      NSeq (NDef ovar (Mux svar i0var i1var)) (shiftl_layer svar t base)
+  end.
+
+Definition shiftl_exp (nbits : N) := 
+  let sbits := N.log2 nbits in
+  NMod
+    (NInput ((var_names "x0" nbits) ++ (var_names "i" sbits)))
+    (NOutput (var_names ("x" ++ to_string sbits) nbits))
+    (N.recursion
+      NSkip
+      (fun si' lexp =>
+        let si := sbits - si' - 1 in
+          let svar := Var ("i" ++ to_string si) in
+          let ovars := var_names ("x" ++ to_string (si + 1)) nbits in
+          let i0vars := List.map Var (var_names ("x" ++ to_string si) nbits) in
+          let i1vars := shiftl_list (si + 1) i0vars in
+            shiftl_layer svar (zip ovars (zip i0vars i1vars)) lexp)
+      sbits).
+
+Compute shiftl_exp 4.
+
+Definition shiftl' (n : N) (x i : list N) := 
+  run (shiftl_exp n) (x ++ i) default_env.
+
+Compute shiftl' 4 [1; 1; 0; 0] [0; 1].
+
+Definition shiftl (nbits : N) (n i : N) :=
+  let sbits := N.log2 nbits in
+  run (shiftl_exp nbits) ((N_to_bvM n (N.to_nat nbits)) ++ (N_to_bvM i (N.to_nat sbits))) default_env.
+
+Compute shiftl 4 3 2.
+
+Theorem shiftl_equiv : forall b n i,
+  i < b /\ n < (N.shiftl 1 b)
+  -> shiftl b n i = Ok (N_to_bvM (N.shiftl n i) (N.to_nat b)).
 Proof.
   intros.
-
-  unfold shiftl4_exp.
-  unfold run.
-  destruct (N_to_bvM n 4 ++ N_to_bvM i 2)%list eqn:Heq.
-  simpl.
-   Qed.*)
-
-Definition shiftl8_exp (x i : list N) := 
-  run <{
-    input $x0 $x1 $x2 $x3 $x4 $x5 $x6 $x7 $i0 $i1 $i2;
-
-    output $b0 $b1 $b2 $b3 $b4 $b5 $b6 $b7;
-
-    node a0: ? i0 -> x0 : #0;
-    node a1: ? i0 -> x1 : x0;
-    node a2: ? i0 -> x2 : x1;
-    node a3: ? i0 -> x3 : x2;
-    node a4: ? i0 -> x4 : x3;
-    node a5: ? i0 -> x5 : x4;
-    node a6: ? i0 -> x6 : x5;
-    node a7: ? i0 -> x7 : x6;
-
-    node b0: ? i1 -> a0 : #0;
-    node b1: ? i1 -> a1 : #0;
-    node b2: ? i1 -> a2 : a0;
-    node b3: ? i1 -> a3 : a1;
-    node b4: ? i1 -> a4 : a2;
-    node b5: ? i1 -> a5 : a3;
-    node b6: ? i1 -> a6 : a4;
-    node b7: ? i1 -> a7 : a5
-  }> 
-  (x ++ i)
-  default_env.
-
-(*Lemma shiftl8_correct_naive: forall n i,
-  modulo_set n 256 ->
-  modulo_set i 8 ->
-  shiftl4_exp (N_to_bvM n 8) (N_to_bvM i 3) = Ok (N_to_bvM ((N.shiftl n i) mod 256) 8).
-Proof.
-  intros n i Hn Hi.
-  repeat match goal with
-  | [Hn: modulo_set n ?E |- _ ] =>
-    match E with
-    | 1 => apply modulo_set_one in Hn as H0
-    | _ => apply modulo_set_explode in Hn;
-            cycle 1; try lia;
-            try destruct Hn as [H0 | Hn]; try simpl in Hn
-    end;
-    try rewrite H0;
-
-    repeat match goal with
-    | [H0: n = _ , Hi: modulo_set i ?E |- _ ] =>
-        match E with
-        | 1 => apply modulo_set_one in Hi as H1
-        | _ => apply modulo_set_explode in Hi;
-                cycle 1; try lia;
-                try destruct Hi as [H1 | Hi]; try simpl in Hi
-        end;
-        try rewrite H1;
-        try reflexivity
-    end
-  end.
-   Qed.*)
-
+  inversion H.
+Admitted.
 (* }}} *)
 
 (* Optimizations {{{ *)
@@ -751,10 +768,8 @@ Fixpoint const_prop (c : comb_exp) : comb_exp :=
   match c with
   | Constant x => c
   | Var x => c
-      (*| Call f l => c (* non-trivial to prove, since IHs aren't generated *) *)
   | Call f l => Call f (List.map const_prop l)
   | Bind x c1 c2 => Bind x (const_prop c1) (const_prop c2)
-
   | Mux (Constant n) c1 c2 =>
       match n mod 2 with
       | 0 => const_prop c1
@@ -791,7 +806,7 @@ Proof.
   induction c using my_comb_exp_ind; try reflexivity; simpl.
 
   (* Call *)
-  intros; destruct (find (elt:=comb_fn) f1 s); try reflexivity.
+  intros; destruct (M.find (elt:=comb_fn) f1 s); try reflexivity.
   match_match.
   
   f_equal.
