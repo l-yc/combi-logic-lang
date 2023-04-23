@@ -50,6 +50,7 @@ Inductive error : Type :=
   | InvalidArgumentError
   | TypeError
   | EvaluationError
+  | InvalidCommandError
   | InvalidModuleError
   | IOError
   .
