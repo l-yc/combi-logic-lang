@@ -147,7 +147,7 @@ Notation "'node' n ':' c" := (CDef (ident_to_string! n) c)
 Notation "x ';' y" :=
   (CSeq x y)
   (in custom com at level 90, right associativity) : com_scope.
-Notation "'done'" :=
+Notation "'skip" :=
   (CSkip)
   (in custom com at level 90, right associativity) : com_scope.
 Notation "'$' x" := (ident_to_string! x)
@@ -912,51 +912,60 @@ Example shiftl_list_ex1 :
   shiftl_list 2 [Var "x0"; Var "x1"; Var "x2"; Var "x3"] = [<{#0}>; <{#0}>; Var "x0"; Var "x1"].
 Proof. reflexivity. Qed.
 
-Fixpoint shiftl_layer (svar : comb_exp) (io_vars : list (string * (comb_exp * comb_exp))) (base : cmd) : cmd :=
+Fixpoint shiftl_layer (svar : comb_exp) (io_vars : list (string * (comb_exp * comb_exp))) : cmd :=
   match io_vars with
-  | [] => base
+  | [] => CSkip
   | (ovar, (i0var, i1var)) :: t => 
-      CSeq (CDef ovar (Mux svar i0var i1var)) (shiftl_layer svar t base)
+      CSeq (shiftl_layer svar t) (CDef ovar (Mux svar i0var i1var))
   end.
 
-Fixpoint shiftl_exp_body' (nbits : nat) (sbits : nat) (base : cmd) := 
+Fixpoint shiftl_exp_body' (nbits : nat) (sbits : nat) :=
   match sbits with
-  | O => base
+  | O => CSkip
   | S si =>
     let svar := Var ("i" ++ to_string (N.of_nat si)) in
     let ovars := var_names ("x" ++ to_string (N.of_nat si + 1)) nbits in
     let i0vars := List.map Var (var_names ("x" ++ to_string (N.of_nat si)) nbits) in
     let i1vars := shiftl_list (Nat.pow 2 si) i0vars in
-      shiftl_exp_body' nbits si (shiftl_layer svar (zip ovars (zip i0vars i1vars)) base)
+      CSeq 
+        (shiftl_exp_body' nbits si)
+        (shiftl_layer svar (List.rev (zip ovars (zip i0vars i1vars))))
    end.
 
 Definition shiftl_exp_body (nbits : nat) (sbits : nat) := 
-  shiftl_exp_body' nbits sbits CSkip.
+  shiftl_exp_body' nbits sbits.
 
 Compute shiftl_exp_body 3 3.
 
 (* MARK: Important lemma *)
-Theorem shiftl_exp_body'_ok: forall nbits sbits base g g1 g2 s,
-  interpret (shiftl_exp_body' nbits sbits CSkip) g s = Ok g1
+(*Theorem shiftl_exp_body'_ok: forall nbits sbits base g g1 g2 s,
+  interpret (shiftl_exp_body' nbits sbits) g s = Ok g1
   -> interpret base g1 s = Ok g2
   -> interpret (shiftl_exp_body' nbits sbits base) g s = Ok g2.
 Proof.
-Admitted.
+   Admitted.*)
 
 
-Definition shiftl_exp (nbits : nat) := 
+(*Definition shiftl_exp (nbits : nat) (sbits : nat) := 
   let sbits := PeanoNat.Nat.log2_up nbits in
+  {|
+    Input := List.app (var_names "x0" nbits) (var_names "i" sbits);
+    Output := var_names ("x" ++ to_string (N.of_nat sbits)) nbits;
+    Program := (shiftl_exp_body nbits sbits);
+   |}.*)
+
+Definition shiftl_exp (nbits : nat) (sbits : nat) := 
   {|
     Input := List.app (var_names "x0" nbits) (var_names "i" sbits);
     Output := var_names ("x" ++ to_string (N.of_nat sbits)) nbits;
     Program := (shiftl_exp_body nbits sbits);
   |}.
 
-Compute shiftl_exp 3.
-
 Definition shiftl (nbits : nat) (n i : N) :=
   let sbits := PeanoNat.Nat.log2_up nbits in
-  run (shiftl_exp nbits) ((N_to_bvM n nbits) ++ (N_to_bvM i sbits)) default_env.
+  run (shiftl_exp nbits sbits) ((N_to_bvM n nbits) ++ (N_to_bvM i sbits)) default_env.
+
+Compute shiftl 6 12 0.
 
 Ltac propositional :=
   repeat match goal with
@@ -1074,6 +1083,219 @@ Lemma shiftl_ok : forall s b n i,
 Proof.
 Admitted.
 
+Lemma run_seq : forall iv ov p1 p2 inp res,
+  run {|
+    Input := iv;
+    Output := ov;
+    Program := CSeq p1 p2
+  |} inp default_env = Ok res
+  <-> exists ov' res',
+    run {|
+      Input := iv;
+      Output := ov';
+      Program := p1
+    |} inp default_env = Ok res' /\ 
+    run {|
+      Input := ov';
+      Output := ov;
+      Program := p2
+    |} res' default_env = Ok res.
+Proof.
+Admitted.
+
+Lemma run_extra_args : forall iv ov p inp res bv bv_vals iv' ov' inp' res',
+  run {|
+    Input := iv;
+    Output := ov;
+    Program := p 
+  |} inp default_env = Ok res
+  -> iv' = List.app iv bv
+  -> ov' = List.app ov bv
+  -> inp' = List.app inp bv_vals
+  -> res' = List.app res bv_vals
+  -> run {|
+    Input := iv';
+    Output := ov';
+    Program := p
+  |} inp' default_env = Ok res'.
+Proof.
+Admitted.
+
+
+Lemma var_names_nodup : forall v n,
+  List.NoDup (var_names v n).
+Proof.
+Admitted.
+
+Open Scope list_scope.
+Lemma zip_app {A} {B} : forall (a1 a2 : list A) (b1 b2 : list B),
+  List.length a1 = List.length b1
+  -> zip (a1 ++ a2) (b1 ++ b2) = zip a1 b1 ++ zip a2 b2.
+Proof.
+Admitted.
+Close Scope list_scope.
+
+Open Scope string_scope.
+Lemma shiftl_0_r' : forall s b n,
+  ge b (Nat.pow 2 s)
+  -> n < 2 ^ (N.of_nat b)
+  -> run (shiftl_exp b s) (N_to_bvM n b ++ N_to_bvM 0 s) default_env = Ok (N_to_bvM (N.shiftl n 0) b).
+Proof.
+  induction s.
+  - simpl; intros.
+    unfold shiftl_exp; simpl.
+    rewrite var_names_nil.
+    rewrite N_to_bvM_0_r.
+    rewrite! List.app_nil_r.
+    unfold run; simpl.
+
+    (* get rid of values_to_state *)
+    assert (Heq: List.length (var_names "x0" b) = List.length (N_to_bvM n b)).
+    { 
+      rewrite! var_names_length.
+      rewrite! N_to_bvM_length.
+      eauto.
+    }
+    apply values_to_state_ok in Heq.
+    destruct Heq as [sval Hval].
+    rewrite Hval; simpl.
+
+    (* get rid of state_to_values *)
+    replace (String (Ascii.Ascii false false false true true true true false)
+        (to_string 0)) with "x0" by reflexivity.
+    apply values_to_state_convertible in Hval.
+    rewrite Hval; rewrite N.shiftl_0_r; eauto.
+    apply var_names_nodup.
+  - simpl; intros.
+    assert (Hs: ge b (Nat.pow 2 s)) by lia.
+    specialize (IHs b n Hs H0).
+
+    (*unfold shiftl_exp in IHs.
+    unfold shiftl_exp.
+    rewrite var_names_succ.
+       unfold shiftl_exp_body.*)
+
+    apply run_seq.
+    do 2 eexists; split.
+    + rewrite var_names_succ.
+      rewrite N_to_bvM_succ.
+      do 2 rewrite List.app_assoc.
+      erewrite run_extra_args.
+      reflexivity.
+      exact IHs.
+      reflexivity.
+      reflexivity.
+      reflexivity.
+      reflexivity.
+    + Opaque String.append.
+      (*unfold run; simpl.*)
+
+      (* evaluate this layer *)
+      replace (N.pos (Pos.of_succ_nat s)) with (N.of_nat s + 1) by lia.
+      induction (var_names ("x" ++ to_string (N.of_nat s)) b).
+      induction b.
+      * eauto.
+      * rewrite! var_names_succ. 
+        rewrite! List.map_app.
+        (* need to handle modulo here, but we assert sth false first *)
+        assert (Hfalse:
+        (shiftl_list (Nat.pow 2 s)
+                    (List.map Var
+                       (var_names ("x" ++ to_string (N.of_nat s)) b) ++
+                     List.map Var
+                       [("x" ++ to_string (N.of_nat s)) ++
+                        to_string (N.of_nat b)]))
+        = List.app (shiftl_list (Nat.pow 2 s)
+                      (List.map Var
+                         (var_names ("x" ++ to_string (N.of_nat s)) b))) 
+                   (List.map Var
+                     [("x" ++ to_string (N.of_nat s)) ++
+                      to_string (N.of_nat b)])).
+        admit.
+        rewrite Hfalse; clear Hfalse.
+        rewrite! zip_app; simpl.
+        rewrite List.rev_app_distr.
+        simpl shiftl_layer.
+        apply run_seq.
+        do 2 eexists; split.
+        (*eapply run_extra_args; eauto.
+        apply IHb; eauto; try lia.
+        ; eauto.
+           admit.*)
+        admit.
+        
+
+        (* get rid of values_to_state *)
+        assert (Heq: List.length (var_names ("x" ++ to_string (N.of_nat s)) b ++
+           ["i" ++ to_string (N.of_nat s)]) = List.length (N_to_bvM (N.shiftl n 0) b ++ [0])).
+        { 
+          rewrite! List.app_length.
+          rewrite var_names_length.
+          rewrite N_to_bvM_length.
+          eauto.
+        }
+        apply values_to_state_ok in Heq.
+        destruct Heq as [sval Hval].
+        rewrite Hval; simpl.
+
+
+
+        rewrite! var_names_length.
+        
+
+      (*(* get rid of state_to_values *)
+      apply values_to_state_convertible in Hval.
+         rewrite Hval; rewrite N.shiftl_0_r; eauto.*)
+      apply var_names_nodup.
+
+
+      (*unfold run; simpl.
+      unfold shiftl_exp in IHs.
+      unfold shiftl_exp_body in IHs.
+         simpl.*)
+      admit.
+Admitted.
+Close Scope string_scope.
+
+Lemma shiftl_shiftl' : forall b n i j,
+  ge b (Nat.pow 2 s)
+  -> n < 2 ^ (N.of_nat b)
+    (*-> run (shiftl_exp b s) (N_to_bvM n b ++ N_to_bvM i s) default_env = Ok (N_to_bvM (N.shiftl n i) b).
+
+       shiftl b n (i + j) = Ok (N_to_bvM (N.shiftl (N.shiftl n i) j) b).*)
+Proof.
+  intros.
+  unfold shiftl.
+Admitted.
+
+Lemma shiftl_equiv' : forall s b n i,
+  ge b (Nat.pow 2 s)
+  -> n < 2 ^ (N.of_nat b)
+  -> run (shiftl_exp b s) (N_to_bvM n b ++ N_to_bvM i s) default_env = Ok (N_to_bvM (N.shiftl n i) b).
+Proof.
+  (*induction s.
+  - simpl; intros.
+    apply shiftl_0_r'; eauto.
+     - admit.*)
+
+  intros; unfold shiftl.
+  intros; induction i using N.peano_ind.
+  + apply shiftl_0_r'; eauto.
+  + replace (N.succ i) with (i + 1) by lia.
+    rewrite shiftl_shiftl.
+    f_equal; f_equal.
+    apply N.shiftl_shiftl.
+
+Admitted.
+
+(* MARK: OK, so it seems like we will need 2 lemmas:
+   - shiftl_0_r
+   - shiftl_shiftl
+   And those should be enough.
+ *)
+
+
+
 Lemma shiftl_0_r : forall b n,
   n < 2^(N.of_nat b)
   -> shiftl b n 0 = Ok (N_to_bvM n b).
@@ -1082,8 +1304,11 @@ Proof.
   unfold shiftl; rewrite N_to_bvM_0_l.
   unfold run; unfold shiftl_exp; simpl.
   induction b.
-  - admit.
-  - assert (Hfalse : n < 2 ^ N.of_nat b). admit.
+  - eauto.
+  - (* here, we have to split N into 2 parts *)
+    (* if N satisfies IH, we can just use that *)
+    (* otherwise, we have to handle the extra bit separately *)
+    assert (Hfalse : n < 2 ^ N.of_nat b). admit.
     specialize (IHb Hfalse).
     apply flat_map_ok_is_ok in IHb; destruct IHb as [e1 [IHb1 IHb]].
     apply flat_map_ok_is_ok in IHb; destruct IHb as [e2 [IHb2 IHb3]].
@@ -1110,15 +1335,30 @@ Lemma shiftl_0_l : forall b i,
 Proof.
 Admitted.
 
+(*Lemma shiftl_shiftl : forall s b n i j,
+  b = Nat.pow 2 s ->
+  shiftl b n (i + j) = Ok (N_to_bvM (N.shiftl (N.shiftl n i) j) b).
+Proof.
+  intros.
+  unfold shiftl; unfold shiftl_exp.
+  induction s.
+  simpl.
+  unfold run.
+   Admitted.*)
+
 Lemma shiftl_shiftl : forall b n i j,
   shiftl b n (i + j) = Ok (N_to_bvM (N.shiftl (N.shiftl n i) j) b).
 Proof.
+  intros.
+  unfold shiftl.
 Admitted.
 
 Theorem shiftl_equiv'' : forall b n i,
   i < N.of_nat b /\ n < 2^(N.of_nat b)
   -> shiftl b n i = Ok (N_to_bvM (N.shiftl n i) b).
 Proof.
+  intros; unfold shiftl.
+  apply shiftl_equiv'.
   intros; induction i using N.peano_ind.
   + rewrite N.shiftl_0_r. apply shiftl_0_r. lia.
   + replace (N.succ i) with (i + 1) by lia.
