@@ -1103,6 +1103,30 @@ Lemma run_seq : forall iv ov p1 p2 inp res,
 Proof.
 Admitted.
 
+Lemma run_split : forall iv ov1 ov2 p1 p2 bv1 bv2 inp,
+  run {|
+    Input := iv;
+    Output := ov1;
+    Program := p1;
+  |} inp
+  default_env = Ok bv1
+  ->
+  run {|
+    Input := iv;
+    Output := ov2;
+    Program := p2;
+  |} inp
+  default_env = Ok bv2
+  ->
+  run {|
+    Input := iv;
+    Output := (ov1 ++ ov2)%list;
+    Program := CSeq p1 p2%list;
+  |} inp
+  default_env = Ok (bv1 ++ bv2)%list.
+Proof.
+Admitted.
+
 Lemma run_extra_args : forall iv ov p inp res bv bv_vals iv' ov' inp' res',
   run {|
     Input := iv;
@@ -1121,6 +1145,20 @@ Lemma run_extra_args : forall iv ov p inp res bv bv_vals iv' ov' inp' res',
 Proof.
 Admitted.
 
+Lemma run_extra_args2 : forall iv1 iv iv2 ov p inp1 inp inp2 res,
+  run {|
+    Input := (iv1 ++ iv2)%list;
+    Output := ov;
+    Program := p
+  |} (inp1 ++ inp2)%list default_env = Ok res
+  -> run {|
+    Input := (iv1 ++ iv ++ iv2)%list;
+    Output := ov;
+    Program := p 
+  |} (inp1 ++ inp ++ inp2)%list default_env = Ok res.
+Proof.
+Admitted.
+
 
 Lemma var_names_nodup : forall v n,
   List.NoDup (var_names v n).
@@ -1134,6 +1172,276 @@ Lemma zip_app {A} {B} : forall (a1 a2 : list A) (b1 b2 : list B),
 Proof.
 Admitted.
 Close Scope list_scope.
+
+
+Opaque String.append.
+
+Open Scope string_scope.
+(*Lemma shiftl_layer_equiv : forall inp out s,
+  run {|
+    Input := List.app inp ["i" ++ to_string (N.of_nat s)];
+    Output := out;
+    Program :=
+      shiftl_layer ("i" ++ to_string (N.of_nat s))
+        (zip out
+          (zip (List.map Var inp)
+             (shiftl_list (Nat.pow 2 s) (List.map Var inp))))
+  |} = Ok (N_to_bvM.*)
+
+
+Compute (shiftl_list 0 (List.map Var (var_names "x" 2))).
+Compute (shiftl_list 1 (List.map Var (var_names "x" 2))).
+Compute (shiftl_list 1 (List.map Var (var_names "x" 3))).
+Compute (shiftl_list 1 (List.map Var (var_names "x" 4))).
+
+Definition shiftl_bvM (n : nat) (l : list N) :=
+  List.firstn (List.length l) (List.app (List.repeat 0 n) l).
+
+
+(*Lemma stupid :
+  M.find svar inp = Some 1
+  -> interpret
+      (shiftl_layer svar
+        (List.rev
+           (zip (var_names v2 b)
+              (zip (List.map Var (var_names v1 b))
+                 (shiftl_list (Nat.pow 2 s) (List.map Var (var_names v1 b)))))))
+      inp default_env
+      = interpret
+      ...
+      inp default_env
+Proof.
+Admitted.*)
+
+
+
+Lemma shiftl_layer_one : forall s b n v1 v2 svar,
+  run {|
+    Input := (var_names v1 b ++ [svar])%list;
+    Output := var_names v2 b;
+    Program :=
+      shiftl_layer svar
+        (List.rev
+          (zip 
+            (var_names v2 b)
+            (zip
+               (List.map Var (var_names v1 b))
+               (shiftl_list (Nat.pow 2 s) (List.map Var (var_names v1 b))))))
+  |}
+  (N_to_bvM n b ++ [1]) default_env 
+  = Ok (shiftl_bvM (Nat.pow 2 s) (N_to_bvM n b)).
+Proof.
+  induction b; eauto.
+
+  intros.
+  replace 
+    (shiftl_list (Nat.pow 2 s) (List.map Var (var_names v1 (S b)))) 
+  with
+    (shiftl_list (Nat.pow 2 s) (List.map Var (var_names v1 b)) ++ [Var (v1 ++ to_string (N.of_nat (b - Nat.pow 2 s)))])%list.
+  rewrite! var_names_succ.
+  rewrite! N_to_bvM_succ.
+  rewrite! List.map_app.
+  rewrite! zip_app; simpl.
+  rewrite List.rev_app_distr; simpl.
+  replace 
+    (shiftl_bvM (Nat.pow 2 s) (N_to_bvM n b ++ [coerce (N.testbit n (N.of_nat b))]))
+  with
+    ((List.firstn b (shiftl_bvM (Nat.pow 2 s) (N_to_bvM n b ++ [coerce (N.testbit n (N.of_nat b))]))) ++ (List.skipn b (shiftl_bvM (Nat.pow 2 s) (N_to_bvM n b ++ [coerce (N.testbit n (N.of_nat b))]))))%list.
+  apply run_split.
+  - { replace (List.firstn b 
+      (shiftl_bvM (Nat.pow 2 s)
+      (N_to_bvM n b ++ [coerce (N.testbit n (N.of_nat b))])))
+    with (shiftl_bvM (Nat.pow 2 s) (N_to_bvM n b)).
+    rewrite <- List.app_assoc.
+    rewrite <- List.app_assoc.
+    apply run_extra_args2 with
+      (iv := [(v1 ++ to_string (N.of_nat b))%string])
+      (inp := [coerce (N.testbit n (N.of_nat b))]).
+    apply IHb.
+    admit. }
+  - { 
+    Opaque values_to_state.
+    Opaque interpret.
+    Opaque state_to_values.
+    unfold run. simpl.
+    assert (Hargs: List.length ((var_names v1 b ++ [v1 ++ to_string (N.of_nat b)]) ++ [svar]) = List.length ((N_to_bvM n b ++ [coerce (N.testbit n (N.of_nat b))]) ++ [1])).
+    { rewrite! List.app_length.
+      rewrite var_names_length.
+      rewrite N_to_bvM_length.
+      reflexivity. }
+    apply values_to_state_ok in Hargs.
+    destruct Hargs as [inp Hinp]; rewrite Hinp; simpl.
+
+    (* get some values *)
+    assert (Hs: M.find svar inp = Some 1).
+    admit.
+    assert (Htmp: exists v, M.find (v1 ++ to_string (N.of_nat (b - Nat.pow 2 s))) inp = Some v).
+    admit.
+    destruct Htmp as [other Hother].
+
+    (* ok *)
+    apply flat_map_ok_is_ok.
+    eexists; split; cycle 1.
+    Transparent interpret.
+    simpl.
+
+    rewrite Hs; simpl.
+    rewrite Hother; reflexivity.
+    admit. }
+  - apply List.firstn_skipn.
+  - admit.
+  - admit.
+  - admit.
+  (*intros.
+
+  (* show run output is ok *)
+  unfold run; simpl.
+  assert (Hargs: List.length (var_names v1 b ++ [svar]) = List.length (N_to_bvM n b ++ [1])).
+  { rewrite! List.app_length.
+    rewrite var_names_length.
+    rewrite N_to_bvM_length.
+    reflexivity. }
+  apply values_to_state_ok in Hargs.
+  destruct Hargs as [inp Hinp]; rewrite Hinp; simpl.
+   *)
+
+  (*apply flat_map_ok_is_ok.
+  eexists; split; cycle 1.
+
+  assert (Hargs: 
+    values_to_state (var_names v1 b ++ [svar]) (N_to_bvM n b ++ [1]) = Ok inp
+    <-> exists inp', values_to_state (var_names v1 b) (N_to_bvM n b) = Ok inp' /\ inp = M.add svar 1 inp'). (* actually not true because of insertion order -- we need a better way to deal with maps *)
+  admit.
+  rewrite Hargs in Hinp.
+     destruct Hinp as [inp2 [Hinp2 Hinp3]]; clear Hargs.*)
+Admitted.
+
+Lemma shiftl_layer_zero : forall s b n v1 v2 svar,
+  run {|
+    Input := (var_names v1 b ++ [svar])%list;
+    Output := var_names v2 b;
+    Program :=
+      shiftl_layer svar
+        (List.rev
+          (zip 
+            (var_names v2 b)
+            (zip
+               (List.map Var (var_names v1 b))
+               (shiftl_list (Nat.pow 2 s) (List.map Var (var_names v1 b))))))
+  |}
+  (N_to_bvM n b ++ [0]) default_env 
+  = Ok (N_to_bvM n b).
+Proof.
+Admitted.
+
+
+Lemma shiftl_layer_equiv : forall s b n i v1 v2 svar,
+  let bit := coerce (N.testbit i (N.of_nat s)) in
+  run {|
+    Input := (var_names v1 b ++ [svar])%list;
+    Output := var_names v2 b;
+    Program :=
+      shiftl_layer svar
+        (List.rev
+          (zip 
+            (var_names v2 b)
+            (zip
+               (List.map Var (var_names v1 b))
+               (shiftl_list (Nat.pow 2 s) (List.map Var (var_names v1 b))))))
+  |}
+  (N_to_bvM n b ++ [bit]) default_env 
+  = Ok (N_to_bvM (N.shiftl n (bit * 2 ^ (N.of_nat s))) b).
+Proof.
+  intros.
+  destruct (N.testbit i (N.of_nat s)); subst bit; simpl coerce.
+  rewrite shiftl_layer_one.
+  admit.
+  rewrite shiftl_layer_zero.
+  admit.
+  (* maybe inducting on b isn't the best way to prove this ... *)
+  (*induction b; eauto.
+
+  intros.
+  replace 
+    (shiftl_list (Nat.pow 2 s) (List.map Var (var_names v1 (S b)))) 
+  with
+    (shiftl_list (Nat.pow 2 s) (List.map Var (var_names v1 b)) ++ [Var (v1 ++ to_string (N.of_nat (b - Nat.pow 2 s)))])%list.
+  rewrite! var_names_succ. 
+  rewrite! List.map_app.
+  rewrite! zip_app; simpl.
+  rewrite List.rev_app_distr; simpl.
+  apply run_seq.
+  exists 
+    (((var_names v1 b ++ [(v1 ++ to_string (N.of_nat b))%string]) ++ [svar])
+    ++ (var_names v2 b ++ [(v2 ++ to_string (N.of_nat b))%string]))%list.
+   eexists.
+   *)
+
+Admitted.
+
+Lemma shiftl_equiv : forall s b n i,
+  ge b (Nat.pow 2 s)
+  (*-> n < 2 ^ (N.of_nat b)*)
+  -> i < 2 ^ (N.of_nat s)
+  -> run (shiftl_exp b s) (N_to_bvM n b ++ N_to_bvM i s) default_env
+    = Ok (N_to_bvM (N.shiftl n i) b).
+Proof.
+  induction s.
+  - simpl; intros.
+
+    (* show no shift *)
+    assert (i = 0) by lia; subst; rewrite N.shiftl_0_r.
+    unfold shiftl_exp; rewrite var_names_nil; rewrite N_to_bvM_0_r; rewrite! List.app_nil_r.
+    simpl.
+
+    (* show run output is ok *)
+    unfold run; simpl.
+    assert (Hargs: List.length (var_names "x0" b) = List.length (N_to_bvM n b)).
+    { rewrite var_names_length.
+      rewrite N_to_bvM_length.
+      reflexivity. }
+    apply values_to_state_ok in Hargs.
+    destruct Hargs as [inp Hinp]; rewrite Hinp; simpl.
+    apply values_to_state_convertible; eauto.
+    apply var_names_nodup.
+
+  - simpl; intros.
+
+    (* show recursive structure *)
+    unfold shiftl_exp.
+    rewrite var_names_succ.
+    rewrite N_to_bvM_succ.
+    do 2 rewrite List.app_assoc.
+    simpl shiftl_exp_body.
+
+    (* run seq *)
+    apply run_seq.
+    exists (List.app (var_names ("x" ++ to_string (N.of_nat s)) b) [("i" ++ to_string (N.of_nat s))%string]).
+    eexists.
+    split.
+    + replace (N_to_bvM i s) with (N_to_bvM (i mod 2 ^ N.of_nat s) s).
+      eapply run_extra_args with
+        (bv := [("i" ++ to_string (N.of_nat s))%string])
+        (bv_vals := [coerce (N.testbit i (N.of_nat s))]); eauto.
+      apply IHs with (i := (i mod 2 ^ N.of_nat s)).
+      lia.
+      apply N.mod_lt; lia.
+
+      admit. (* need a lemma here about N_to_bvM being modulo *)
+    + replace (N.of_nat (S s)) with (N.of_nat s + 1) by lia.
+      rewrite shiftl_layer_equiv.
+      rewrite N.shiftl_shiftl.
+      f_equal.
+      f_equal.
+      f_equal.
+      admit. (* prove some bits thing here, using H0 *)
+
+      (* we need a lemma here about shift_layer actl being equivalent to shifting by a power of 2 *)
+      (* the current way the function is coded won't work, because shiftlayer doesn't know anything about the shift amount *)
+
+Admitted.
+
+
 
 Open Scope string_scope.
 Lemma shiftl_0_r' : forall s b n,
