@@ -4,6 +4,17 @@ Require Import UROP.Types.
 
 Local Open Scope UROP_scope.
 
+Ltac all_branches :=
+  repeat match goal with
+  (*| [ |- context[match ?e with | Ok _ => _ | Err _ => _ end] ] => destruct e eqn:?*)
+  | [ |- context[match ?e with _ => _ end] ] => destruct e eqn:?
+  end.
+
+Ltac propositional :=
+  repeat match goal with
+  | [H: _ /\ _ |- _] => inversion H; clear H
+  end.
+
 Ltac simplify_list :=
   try match goal with
   | [|- context[Datatypes.length (List.map _ _)]] => rewrite List.map_length

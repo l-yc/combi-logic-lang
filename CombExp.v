@@ -395,12 +395,6 @@ Theorem interp_interpret_equiv: forall g c g' s,
   interp (Ok g) c g' <-> interpret c g s = g'.
 Proof. *)
 
-Ltac all_branches :=
-  repeat match goal with
-    (*| [ |- context[match ?e with | Ok _ => _ | Err _ => _ end] ] => destruct e eqn:?*)
-         | [ |- context[match ?e with _ => _ end] ] => destruct e eqn:?
-         end.
-
 Lemma interpret_seq_ok: forall c1 c2 g s g1 g2,
   interpret c1 g s = Ok g1
   -> interpret c2 g1 s = Ok g2
@@ -544,11 +538,6 @@ Definition run (m : module) (inp : list N) (s : env) : result (list N) :=
   (state_to_values m.(Output)).
 (* }}} *)
 
-  (*Theorem run_strengthen : forall i o c inp s r,
-  run (NMod (NInput i) (NOutput o) c) inp s = r
-  -> forall k v, run (NMod (NInput (i ++ [k])) (NOutput (o ++ [k])) c) (inp ++ [v]) s = r.
-Proof. *)
-
 (* Evaluate - Test {{{ *)
 Example test_evaluate1:
   evaluate (Bind "X0" 0 ("X0")) M.empty default_env = Ok 0.
@@ -611,6 +600,118 @@ Proof. simpl. reflexivity. Qed.
 Example test_evaluate_parse5:
   evaluate <{ let X0 := #0 in let X1 := #1 in let X := @land X0 X1 in ? X -> X0 : X1 }> M.empty default_env = Ok 0.
 Proof. simpl. reflexivity. Qed.
+(* }}} *)
+
+(* Optimizations {{{ *)
+Fixpoint const_prop (c : comb_exp) : comb_exp :=
+  match c with
+  | Constant x => c
+  | Var x => c
+  | Call f l => Call f (List.map const_prop l)
+  | Bind x c1 c2 => Bind x (const_prop c1) (const_prop c2)
+  | Mux (Constant n) c1 c2 =>
+      match n mod 2 with
+      | 0 => const_prop c1
+      | _ => const_prop c2
+      end
+  | Mux cs c1 c2 => Mux (const_prop cs) (const_prop c1) (const_prop c2)
+  | Not (Constant n) => Constant (lnot_fn n)
+  | Not c => Not (const_prop c)
+  | And (Constant n1) (Constant n2) => Constant (land_fn n1 n2)
+  | And c1 c2 => And (const_prop c1) (const_prop c2)
+  | Or (Constant n1) (Constant n2) => Constant (lor_fn n1 n2)
+  | Or c1 c2 => Or (const_prop c1) (const_prop c2)
+  | Xor (Constant n1) (Constant n2) => Constant (lxor_fn n1 n2)
+  | Xor c1 c2 => Xor (const_prop c1) (const_prop c2)
+  | Nand (Constant n1) (Constant n2) => Constant (lnand_fn n1 n2)
+  | Nand c1 c2 => Nand (const_prop c1) (const_prop c2)
+  | Nor (Constant n1) (Constant n2) => Constant (lnor_fn n1 n2)
+  | Nor c1 c2 => Nor (const_prop c1) (const_prop c2)
+  end.
+
+Ltac explode :=
+  repeat match goal with
+         | [ |- context[match ?E with _ => _ end] ] => destruct E; simpl
+         end.
+
+Ltac match_match :=
+  match goal with
+  | [ |- context[match ?E1 with _ => _ end = match ?E2 with _ => _ end] ] => assert (E1 = E2)
+  end.
+
+Theorem const_prop_ok :
+  forall c g s, evaluate c g s = evaluate (const_prop c) g s.
+Proof.
+  induction c using my_comb_exp_ind; try reflexivity; simpl.
+
+  (* Call *)
+  intros; destruct (M.find (elt:=comb_fn) f1 s); try reflexivity.
+  match_match.
+  
+  f_equal.
+  induction l.
+
+  simpl. reflexivity.
+
+  simpl. inversion IHl. rewrite IHl0. f_equal.
+  apply H1.
+  apply H2.
+
+  rewrite H. reflexivity.
+
+  (* Bind *)
+  intros. rewrite IHc1.
+  destruct evaluate; try rewrite IHc2; reflexivity.
+  
+  (* Mux *)
+  destruct c1; simpl.
+
+  destruct (x mod 2); try apply IHc2; try apply IHc3.
+
+  all: try (intros; explode; try rewrite IHc2; try rewrite IHc3; reflexivity).
+  all: try (intros; match_match; try apply IHc1; rewrite H; explode; try apply IHc2; try apply IHc3; try reflexivity).
+
+  (* Not Gate *)
+  destruct c; simpl; try reflexivity;
+    try (intros; match_match; try apply IHc; rewrite H; explode; try reflexivity).
+
+  (* And Gate *)
+  destruct c1; simpl; try reflexivity; intros.
+  destruct c2; simpl; try reflexivity.
+    all: try (intros; match_match; try apply IHc2; try rewrite H; explode; reflexivity).
+    all: try (intros; try rewrite IHc2; reflexivity).
+    all: try (intros; match_match; try apply IHc1; rewrite H; try rewrite IHc2; reflexivity).
+
+  (* Or Gate *)
+  destruct c1; simpl; try reflexivity; intros.
+  destruct c2; simpl; try reflexivity.
+    all: try (intros; match_match; try apply IHc2; try rewrite H; explode; reflexivity).
+    all: try (intros; try rewrite IHc2; reflexivity).
+    all: try (intros; match_match; try apply IHc1; rewrite H; try rewrite IHc2; reflexivity).
+
+  (* Xor Gate *)
+  destruct c1; simpl; try reflexivity; intros.
+  destruct c2; simpl; try reflexivity.
+    all: try (intros; match_match; try apply IHc2; try rewrite H; explode; reflexivity).
+    all: try (intros; try rewrite IHc2; reflexivity).
+    all: try (intros; match_match; try apply IHc1; rewrite H; try rewrite IHc2; reflexivity).
+
+  (* Nand Gate *)
+  destruct c1; simpl; try reflexivity; intros.
+  destruct c2; simpl; try reflexivity.
+    all: try (intros; match_match; try apply IHc2; try rewrite H; explode; reflexivity).
+    all: try (intros; try rewrite IHc2; reflexivity).
+    all: try (intros; match_match; try apply IHc1; rewrite H; try rewrite IHc2; reflexivity).
+
+  (* Nor Gate *)
+  destruct c1; simpl; try reflexivity; intros.
+  destruct c2; simpl; try reflexivity.
+    all: try (intros; match_match; try apply IHc2; try rewrite H; explode; reflexivity).
+    all: try (intros; try rewrite IHc2; reflexivity).
+    all: try (intros; match_match; try apply IHc1; rewrite H; try rewrite IHc2; reflexivity).
+Qed.
+
+  (* need more automation :( *)
 (* }}} *)
 
 (* HLL {{{ *)
@@ -821,6 +922,24 @@ Proof.
   apply List.NoDup_rev.
   assumption.
 Qed.
+
+Lemma var_names_spec : forall i s n d,
+  lt i n
+  -> List.nth i (var_names s n) d = (s ++s to_string (N.of_nat i)).
+Proof.
+  induction n.
+  inversion 1.
+  intros.
+  assert ((i < n)%nat \/ (i = n)%nat) by lia.
+  destruct H0.
+  - rewrite var_names_succ.
+    rewrite List.app_nth1; eauto; lists.
+    rewrite var_names_length; lia.
+  - subst; clear H.
+    rewrite var_names_succ.
+    rewrite List.app_nth2; rewrite var_names_length; try lia.
+    replace (n - n)%nat with O by lia; eauto.
+Qed.
 (* }}} *)
 
 (* Run Helpers {{{ *)
@@ -1025,15 +1144,7 @@ Example generic_shiftl_test : shiftl 5 31 4 = Ok [0; 0; 0; 0; 1].
 Proof. unfold shiftl. simpl. reflexivity. Qed.
 (* }}} *)
 
-Ltac propositional :=
-  repeat match goal with
-  | [H: _ /\ _ |- _] => inversion H; clear H
-  end.
-
-(* Search N.shiftl. *)
-(* _spec... *)
-
-(* Proof for generic shifter {{{ *)
+(* Correctness Proof for generic shifter {{{ *)
 Opaque String.append.
 Open Scope string_scope.
 
@@ -1087,27 +1198,16 @@ Proof.
 
   - rewrite List.firstn_firstn.
     replace (Nat.min a b) with a by lia.
-    subst.
-    rewrite List.firstn_O; eauto.
+    subst; simp.
 
   - rewrite List.firstn_firstn.
     replace (Nat.min a0 b) with a0 by lia.
     rewrite! List.firstn_app.
-    f_equal.
+    f_equal; simp.
     replace (a :: l) with ([a] ++l l) by eauto.
     replace (a :: (l ++l l')) with ([a] ++l l ++l l') by eauto.
-
-    Search (List.firstn).
-    rewrite List.firstn_app with (l2 := l').
-
-    replace (Nat.sub (Nat.sub a0 (Datatypes.length (List.repeat 0 x))) (Datatypes.length ([a] ++l l))) with O.
-    rewrite List.firstn_O.
-    rewrite List.app_nil_r.
-    eauto.
-
-    rewrite List.app_length; simpl.
-    rewrite List.repeat_length.
-    lia.
+    rewrite List.firstn_app with (l2 := l'); simp.
+    replace (a0 - x - S (Datatypes.length l))%nat with O; simp; lia.
 Qed.
 
 Lemma shiftl_bvM_length_equiv : forall s b n,
@@ -1117,29 +1217,8 @@ Lemma shiftl_bvM_length_equiv : forall s b n,
        (bvM.of_N b n ++l [N.b2n (N.testbit n (N.of_nat b))])).
 Proof.
   intros.
-  unfold shiftl_bvM.
-  rewrite bvM.of_N_length.
-  eapply firstn_firstn_repeat.
-  rewrite bvM.of_N_length; lia.
-  rewrite List.app_length.
-  rewrite bvM.of_N_length; lia.
-Qed.
-
-Lemma var_names_spec : forall i s n d,
-  lt i n
-  -> List.nth i (var_names s n) d = (s ++s to_string (N.of_nat i)).
-Proof.
-  induction n.
-  inversion 1.
-  intros.
-  assert ((i < n)%nat \/ (i = n)%nat) by lia.
-  destruct H0.
-  - rewrite var_names_succ.
-    rewrite List.app_nth1; eauto; simp.
-  - subst; clear H.
-    rewrite var_names_succ.
-    rewrite List.app_nth2; simp.
-    replace (n - n)%nat with O by lia; eauto.
+  unfold shiftl_bvM; simp.
+  eapply firstn_firstn_repeat; simp; lia.
 Qed.
 
 Lemma shiftl_layer_one : forall s b n v1 v2 svar,
@@ -1564,7 +1643,6 @@ Proof.
   { rewrite N.shiftl_0_r; eauto. }
 Qed.
 
-(* zify. *)
 (* need a lemma here about N_to_bvM being modulo *)
 Lemma bvM_is_mod : forall s n n',
   n mod 2 ^ N.of_nat s = n' mod 2 ^ N.of_nat s
@@ -1644,116 +1722,8 @@ Proof.
 Admitted.
 (* }}} *)
 
-(* Optimizations {{{ *)
-Fixpoint const_prop (c : comb_exp) : comb_exp :=
-  match c with
-  | Constant x => c
-  | Var x => c
-  | Call f l => Call f (List.map const_prop l)
-  | Bind x c1 c2 => Bind x (const_prop c1) (const_prop c2)
-  | Mux (Constant n) c1 c2 =>
-      match n mod 2 with
-      | 0 => const_prop c1
-      | _ => const_prop c2
-      end
-  | Mux cs c1 c2 => Mux (const_prop cs) (const_prop c1) (const_prop c2)
-  | Not (Constant n) => Constant (lnot_fn n)
-  | Not c => Not (const_prop c)
-  | And (Constant n1) (Constant n2) => Constant (land_fn n1 n2)
-  | And c1 c2 => And (const_prop c1) (const_prop c2)
-  | Or (Constant n1) (Constant n2) => Constant (lor_fn n1 n2)
-  | Or c1 c2 => Or (const_prop c1) (const_prop c2)
-  | Xor (Constant n1) (Constant n2) => Constant (lxor_fn n1 n2)
-  | Xor c1 c2 => Xor (const_prop c1) (const_prop c2)
-  | Nand (Constant n1) (Constant n2) => Constant (lnand_fn n1 n2)
-  | Nand c1 c2 => Nand (const_prop c1) (const_prop c2)
-  | Nor (Constant n1) (Constant n2) => Constant (lnor_fn n1 n2)
-  | Nor c1 c2 => Nor (const_prop c1) (const_prop c2)
-  end.
-
-Ltac explode :=
-  repeat match goal with
-         | [ |- context[match ?E with _ => _ end] ] => destruct E; simpl
-         end.
-
-Ltac match_match :=
-  match goal with
-  | [ |- context[match ?E1 with _ => _ end = match ?E2 with _ => _ end] ] => assert (E1 = E2)
-  end.
-
-Theorem const_prop_ok :
-  forall c g s, evaluate c g s = evaluate (const_prop c) g s.
-Proof.
-  induction c using my_comb_exp_ind; try reflexivity; simpl.
-
-  (* Call *)
-  intros; destruct (M.find (elt:=comb_fn) f1 s); try reflexivity.
-  match_match.
-  
-  f_equal.
-  induction l.
-
-  simpl. reflexivity.
-
-  simpl. inversion IHl. rewrite IHl0. f_equal.
-  apply H1.
-  apply H2.
-
-  rewrite H. reflexivity.
-
-  (* Bind *)
-  intros. rewrite IHc1.
-  destruct evaluate; try rewrite IHc2; reflexivity.
-  
-  (* Mux *)
-  destruct c1; simpl.
-
-  destruct (x mod 2); try apply IHc2; try apply IHc3.
-
-  all: try (intros; explode; try rewrite IHc2; try rewrite IHc3; reflexivity).
-  all: try (intros; match_match; try apply IHc1; rewrite H; explode; try apply IHc2; try apply IHc3; try reflexivity).
-
-  (* Not Gate *)
-  destruct c; simpl; try reflexivity;
-    try (intros; match_match; try apply IHc; rewrite H; explode; try reflexivity).
-
-  (* And Gate *)
-  destruct c1; simpl; try reflexivity; intros.
-  destruct c2; simpl; try reflexivity.
-    all: try (intros; match_match; try apply IHc2; try rewrite H; explode; reflexivity).
-    all: try (intros; try rewrite IHc2; reflexivity).
-    all: try (intros; match_match; try apply IHc1; rewrite H; try rewrite IHc2; reflexivity).
-
-  (* Or Gate *)
-  destruct c1; simpl; try reflexivity; intros.
-  destruct c2; simpl; try reflexivity.
-    all: try (intros; match_match; try apply IHc2; try rewrite H; explode; reflexivity).
-    all: try (intros; try rewrite IHc2; reflexivity).
-    all: try (intros; match_match; try apply IHc1; rewrite H; try rewrite IHc2; reflexivity).
-
-  (* Xor Gate *)
-  destruct c1; simpl; try reflexivity; intros.
-  destruct c2; simpl; try reflexivity.
-    all: try (intros; match_match; try apply IHc2; try rewrite H; explode; reflexivity).
-    all: try (intros; try rewrite IHc2; reflexivity).
-    all: try (intros; match_match; try apply IHc1; rewrite H; try rewrite IHc2; reflexivity).
-
-  (* Nand Gate *)
-  destruct c1; simpl; try reflexivity; intros.
-  destruct c2; simpl; try reflexivity.
-    all: try (intros; match_match; try apply IHc2; try rewrite H; explode; reflexivity).
-    all: try (intros; try rewrite IHc2; reflexivity).
-    all: try (intros; match_match; try apply IHc1; rewrite H; try rewrite IHc2; reflexivity).
-
-  (* Nor Gate *)
-  destruct c1; simpl; try reflexivity; intros.
-  destruct c2; simpl; try reflexivity.
-    all: try (intros; match_match; try apply IHc2; try rewrite H; explode; reflexivity).
-    all: try (intros; try rewrite IHc2; reflexivity).
-    all: try (intros; match_match; try apply IHc1; rewrite H; try rewrite IHc2; reflexivity).
-Qed.
-
-  (* need more automation :( *)
-(* }}} *)
+(* zify *)
+(* Search N.shiftl. *)
+(* _spec... *)
 
 End CombExp.
