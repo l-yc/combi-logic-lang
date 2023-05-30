@@ -390,8 +390,7 @@ Fixpoint state_to_values (args : list string) (g : state) : result (list N) :=
 
 Theorem interp_interpret_equiv: forall g c g' s,
   interp (Ok g) c g' <-> interpret c g s = g'.
-Proof.
-   Admitted.*)
+Proof. *)
 
 Ltac all_branches :=
   repeat match goal with
@@ -468,6 +467,7 @@ Proof.
 Qed.
 
 Definition map_keys {elt: Type} (m : M.t elt) := List.map fst (M.elements m).
+Definition map_vals {elt: Type} (m : M.t elt) := List.map snd (M.elements m).
 
 Theorem map_keys_ok {elt: Type} : forall k v m,
   ~ M.In k m
@@ -486,17 +486,15 @@ Definition m1 := M.add "a" 1 M.empty.
 Definition m2 := M.add "b" 2 M.empty.
 Compute merge_fmap_seq m1 m2.
 
-Theorem values_to_state_app : forall arg1 arg2 val1 val2 g,
+(*Theorem values_to_state_app : forall arg1 arg2 val1 val2 g,
   values_to_state (arg1 ++ arg2) (val1 ++ val2) = Ok g
   -> exists g1 g2, values_to_state arg1 val1 = Ok g1 /\ values_to_state arg2 val2 = Ok g2 /\ g = merge_fmap_seq g1 g2.
 Proof.
-Admitted.
 
 Theorem values_to_state_app_2 : forall arg1 arg2 val1 val2 g1 g2,
   values_to_state arg1 val1 = Ok g1 /\ values_to_state arg2 val2 = Ok g2
   -> values_to_state (arg1 ++ arg2) (val1 ++ val2) = Ok (merge_fmap_seq g1 g2).
-Proof.
-Admitted.
+Proof. *)
 
 Theorem values_to_state_convertible' : forall args values g, 
   (* missing some clause about uniqueness *)
@@ -531,10 +529,10 @@ Qed.
 Theorem values_to_state_convertible : forall args values g, 
   (* missing some clause about uniqueness *)
   List.NoDup args
-  -> values_to_state args values = Ok g 
+  -> values_to_state args values = Ok g
   -> state_to_values args g = Ok values.
 Proof.
-  apply values_to_state_convertible'.
+  apply values_to_state_convertible'; eauto.
 Qed.
 
 Definition run (m : module) (inp : list N) (s : env) : result (list N) :=
@@ -546,8 +544,7 @@ Definition run (m : module) (inp : list N) (s : env) : result (list N) :=
   (*Theorem run_strengthen : forall i o c inp s r,
   run (NMod (NInput i) (NOutput o) c) inp s = r
   -> forall k v, run (NMod (NInput (i ++ [k])) (NOutput (o ++ [k])) c) (inp ++ [v]) s = r.
-Proof.
-     Admitted.*)
+Proof. *)
 
 (* Evaluate - Test {{{ *)
 Example test_evaluate1:
@@ -737,8 +734,7 @@ Module bv.
     - assert (n = 0) by lia; subst.
       lia.
     - rewrite bv_size_equiv by lia.
-      admit.
-     Admitted. *)
+      admit. *)
   Close Scope N_scope.
 End bv.
 
@@ -778,7 +774,6 @@ Module bvM.
 
     induction p; simpl.
        simpl in H.*)
-  Admitted.
 
      Compute N_to_bvM 10 32. (* N to fixed length bit vectors *)*)
 End bvM.
@@ -1187,8 +1182,132 @@ Qed.
 Close Scope list_scope.
 (* }}} *)
 
+(* Run Helpers {{{ *)
+Lemma state_to_values_idempotent : forall v,
+  state_to_values (map_keys v) v = Ok (map_vals v).
+Proof.
+Admitted.
+
+Lemma values_to_state_idempotent : forall v,
+  values_to_state (map_keys v) (map_vals v) = Ok v.
+Proof.
+Admitted.
+
+Lemma map_keys_nodup {elt : Type} : forall (m : M.t elt),
+  List.NoDup (map_keys m).
+Proof.
+Admitted.
+
+Fixpoint untouched (p : cmd) (s : string) : Prop :=
+  match p with
+  | CSkip => True
+  | CDef n c => s <> n
+  | CSeq c1 c2 => untouched c1 s /\ untouched c2 s
+  end.
+
+Fixpoint covers_exp (c : comb_exp) (vars : list string) : Prop :=
+  match c with
+  | Constant x => True
+  | Var x => List.In x vars
+  | Call f l => True (*List.Forall (fun c => covers_exp c vars) l *) (* this is kinda bad *)
+  | Bind x c1 c2 => covers_exp c1 vars /\ covers_exp c2 vars
+  | Mux cs c1 c2 => covers_exp cs vars /\ covers_exp c1 vars /\ covers_exp c2 vars
+  | Not c1 => covers_exp c1 vars
+  | And c1 c2 => covers_exp c1 vars /\ covers_exp c2 vars
+  | Or c1 c2 => covers_exp c1 vars /\ covers_exp c2 vars
+  | Xor c1 c2 => covers_exp c1 vars /\ covers_exp c2 vars
+  | Nand c1 c2 => covers_exp c1 vars /\ covers_exp c2 vars
+  | Nor c1 c2 => covers_exp c1 vars /\ covers_exp c2 vars
+  end.
+
+Fixpoint covers (p : cmd) (vars : list string) : Prop :=
+  match p with
+  | CSkip => True
+  | CDef n c => covers_exp c vars
+  | CSeq c1 c2 => covers c1 vars /\ covers c2 vars
+  end.
+(* }}} *)
+
 (* Run {{{ *)
-Lemma run_seq : forall iv ov p1 p2 inp res,
+(*Lemma run_seq' : forall iv ov p1 p2 sin sout inp vres env,
+  values_to_state iv inp = Ok sin /\
+  interpret (CSeq p1 p2) sin env = Ok sout /\
+     state_to_values ov sout = vres
+  <-> exists s',
+    values_to_state iv inp = Ok sin /\
+    interpret p1 sin env = Ok s' /\
+    interpret p2 s' env = Ok sout /\
+   state_to_values ov sout = vres.*)
+(*Lemma run_seq' : forall iv ov p1 p2 inp vres env,
+  flat_map_ok 
+    (flat_map_ok 
+      (values_to_state iv inp)
+      (fun g => interpret (CSeq p1 p2) g env))
+    (state_to_values ov)
+  = vres
+  <-> exists s',
+    flat_map_ok (values_to_state iv inp) (fun g => interpret p1 g env) = Ok s' /\
+   flat_map_ok (interpret p2 s' env) (state_to_values ov) = vres.*)
+Lemma run_seq' : forall iv ov p1 p2 inp res,
+  run {|
+    Input := iv;
+    Output := ov;
+    Program := CSeq p1 p2
+  |} inp default_env = Ok res
+  <-> exists s',
+    run {|
+      Input := iv;
+      Output := (map_keys s');
+      Program := p1
+    |} inp default_env = Ok (map_vals s') /\
+    run {|
+      Input := (map_keys s');
+      Output := ov;
+      Program := p2
+    |} (map_vals s') default_env = Ok res /\
+    flat_map_ok (values_to_state iv inp) (fun g => interpret p1 g default_env) = Ok s'.
+Proof.
+  split.
+  - unfold run; simpl.
+    intros.
+    rewrite flat_map_ok_is_ok in H.
+    destruct H as [vout [H1 H]].
+    rewrite flat_map_ok_is_ok in H.
+    destruct H as [vin [H H2]].
+    destruct (interpret p1 vin default_env) eqn:Heq; cycle 1.
+
+    inversion H.
+
+    exists v.
+    split; try split; eauto.
+    + rewrite H2; simpl.
+      rewrite Heq; simpl.
+      apply state_to_values_idempotent.
+    + replace (values_to_state _ _) with (Ok v); simpl.
+      rewrite H; simpl.
+      exact H1.
+      symmetry; apply values_to_state_idempotent.
+    + rewrite H2; eauto.
+  - unfold run; simpl.
+    
+    intros.
+    destruct H as [s' [H1 H2]].
+    rewrite flat_map_ok_is_ok in H1.
+    destruct H1 as [v' [H1a H1]].
+    rewrite flat_map_ok_is_ok in H1.
+    destruct H1 as [vin [H1b H1]].
+
+    destruct H2 as [H2 Hs].
+    rewrite H1 in Hs; simpl in Hs.
+    rewrite H1b in Hs; inversion Hs; subst.
+
+    rewrite H1; simpl.
+    rewrite H1b; simpl.
+    rewrite values_to_state_idempotent in H2; simpl in H2.
+    assumption.
+Qed.
+
+Lemma run_seq'' : forall iv ov p1 p2 inp res,
   run {|
     Input := iv;
     Output := ov;
@@ -1199,12 +1318,55 @@ Lemma run_seq : forall iv ov p1 p2 inp res,
       Input := iv;
       Output := ov';
       Program := p1
-    |} inp default_env = Ok res' /\ 
+    |} inp default_env = Ok res' /\
     run {|
       Input := ov';
       Output := ov;
       Program := p2
     |} res' default_env = Ok res.
+    (*List.NoDup ov'.*)
+Proof.
+  intros.
+  split.
+  - intros.
+    apply run_seq' in H.
+    destruct H as [s' [H1 [H2 H3]]].
+    exists (map_keys s').
+    exists (map_vals s').
+    split; try split; eauto.
+  - unfold run; simpl.
+    
+    intros.
+    destruct H as [ov' H].
+    destruct H as [res' H].
+    destruct H as [H1 H2].
+
+    rewrite flat_map_ok_is_ok in H1.
+    destruct H1 as [v' [H1a H1]].
+    rewrite flat_map_ok_is_ok in H1.
+    destruct H1 as [vin [H1b H1]].
+
+    rewrite H1; simpl.
+    rewrite H1b; simpl.
+Abort.
+
+Lemma run_seq : forall iv ov ov' p1 p2 inp res res',
+  run {|
+    Input := iv;
+    Output := ov';
+    Program := p1
+  |} inp default_env = Ok res'
+  -> run {|
+    Input := ov';
+    Output := ov;
+    Program := p2
+  |} res' default_env = Ok res
+  -> covers p2 ov'
+  -> run {|
+    Input := iv;
+    Output := ov;
+    Program := CSeq p1 p2
+  |} inp default_env = Ok res.
 Proof.
 Admitted.
 
@@ -1221,6 +1383,8 @@ Lemma run_split : forall iv ov1 ov2 p1 p2 bv1 bv2 inp,
     Program := p2;
   |} inp
   default_env = Ok bv2
+  -> List.Forall (untouched p1) iv
+  -> List.Forall (untouched p2) ov1
   -> run {|
     Input := iv;
     Output := (ov1 ++ ov2)%list;
@@ -1228,22 +1392,38 @@ Lemma run_split : forall iv ov1 ov2 p1 p2 bv1 bv2 inp,
   |} inp
   default_env = Ok (bv1 ++ bv2)%list.
 Proof.
+  unfold run; simpl.
+  intros.
+
+  rewrite flat_map_ok_is_ok in H.
+  destruct H as [res1 [Ha H]].
+  rewrite flat_map_ok_is_ok in H.
+  destruct H as [vin [Hb Hin]].
+
+  rewrite Hin in H0; simpl in H0.
+  rewrite flat_map_ok_is_ok in H0.
+  destruct H0 as [res2 [H0a H0b]].
+
+  rewrite Hin; simpl.
+  rewrite Hb.
+  rewrite flat_map_ok_is_ok.
+  eexists.
+
+  (* need some constraint on whether things are touched *)
+  (*rewrite flat_map_ok_is_ok.
+  eexists.
+  apply state_to_values_app. eauto.
+     Search state_to_values.*)
 Admitted.
 (*List.Forall P l*)
 
-Fixpoint untouched (p : cmd) (s : string) : Prop :=
-  match p with
-  | CSkip => True
-  | CDef n c => s <> n
-  | CSeq c1 c2 => untouched c1 s \/ untouched c2 s
-  end.
-
+(* need to add conditions *)
 Lemma run_pass_through : forall iv ov p inp res bv bv_vals,
   List.Forall (untouched p) bv
   -> run {|
     Input := iv;
     Output := ov;
-    Program := p 
+    Program := p
   |} inp default_env = Ok res
   -> run {|
     Input := (iv ++l bv);
@@ -1251,8 +1431,11 @@ Lemma run_pass_through : forall iv ov p inp res bv bv_vals,
     Program := p
   |} (inp ++l bv_vals) default_env = Ok (res ++l bv_vals).
 Proof.
+  unfold run; simpl.
+  intros.
 Admitted.
 
+(* need to add conditions *)
 Lemma run_extra_args : forall iv1 iv iv2 ov p inp1 inp inp2 res,
   List.Forall (fun v => ~ List.In v iv2) iv
   -> run {|
@@ -1517,12 +1700,9 @@ Proof.
   rewrite! var_names_succ.
   rewrite! N_to_bvM_succ.
   rewrite! List.map_app.
-  rewrite! zip_app; simpl.
+  rewrite! zip_app; simp; try lia.
   rewrite List.rev_app_distr; simpl.
-  replace
-    (shiftl_bvM (Nat.pow 2 s) (bvM.of_N b n ++ [N.b2n (N.testbit n (N.of_nat b))]))
-  with
-    ((List.firstn b (shiftl_bvM (Nat.pow 2 s) (bvM.of_N b n ++ [N.b2n (N.testbit n (N.of_nat b))]))) ++ (List.skipn b (shiftl_bvM (Nat.pow 2 s) (bvM.of_N b n ++ [N.b2n (N.testbit n (N.of_nat b))]))))%list.
+  rewrite <- List.firstn_skipn with (n := b) (l := shiftl_bvM _ _).
   apply run_split.
   - { replace (List.firstn b 
       (shiftl_bvM (Nat.pow 2 s)
@@ -1594,9 +1774,8 @@ Proof.
         erewrite list_firstn_skipn_succ.
         erewrite N_to_bvM_spec; eauto; lia.
         simp; lia. }
-  - apply List.firstn_skipn.
-  - simplify; simp; lia.
-  - simplify.
+  - admit. (* var names property *)
+  - admit. (* var names property *)
   - rewrite var_names_succ.
     rewrite List.map_app; simp.
     unfold shiftl_list; simp.
@@ -1627,12 +1806,9 @@ Proof.
     rewrite! var_names_succ.
     rewrite! N_to_bvM_succ.
     rewrite! List.map_app.
-    rewrite! zip_app; simpl.
+    rewrite! zip_app; simp; try lia.
     rewrite List.rev_app_distr; simpl.
-    replace
-      (shiftl_bvM (Nat.pow 2 s) (bvM.of_N b n ++ [N.b2n (N.testbit n (N.of_nat b))]))
-    with
-      ((List.firstn b (shiftl_bvM (Nat.pow 2 s) (bvM.of_N b n ++ [N.b2n (N.testbit n (N.of_nat b))]))) ++ (List.skipn b (shiftl_bvM (Nat.pow 2 s) (bvM.of_N b n ++ [N.b2n (N.testbit n (N.of_nat b))]))))%list.
+    rewrite <- List.firstn_skipn with (n := b) (l := shiftl_bvM _ _).
     apply run_split.
     - { replace (List.firstn b 
         (shiftl_bvM (Nat.pow 2 s)
@@ -1678,9 +1854,8 @@ Proof.
         rewrite List.app_nil_r.
         erewrite list_firstn_skipn_succ by simp.
         rewrite List.nth_repeat; eauto. }
-  - apply List.firstn_skipn.
-  - simplify; simp; lia.
-  - simplify.
+  - admit. (* var names property *)
+  - admit. (* var names property *)
   - unfold shiftl_list; simp.
     rewrite List.firstn_app; simp.
     replace (b - 2 ^ s)%nat with O by lia; simp.
@@ -1727,12 +1902,8 @@ Proof.
   rewrite! var_names_succ.
   rewrite! N_to_bvM_succ.
   rewrite! List.map_app.
-  rewrite! zip_app; simpl.
+  rewrite! zip_app; simp; try lia.
   rewrite List.rev_app_distr; simpl.
-  replace
-    (shiftl_bvM (Nat.pow 2 s) (bvM.of_N b n ++ [N.b2n (N.testbit n (N.of_nat b))]))
-  with
-    ((List.firstn b (shiftl_bvM (Nat.pow 2 s) (bvM.of_N b n ++ [N.b2n (N.testbit n (N.of_nat b))]))) ++ (List.skipn b (shiftl_bvM (Nat.pow 2 s) (bvM.of_N b n ++ [N.b2n (N.testbit n (N.of_nat b))]))))%list.
   apply run_split.
   - { replace (List.firstn b 
       (shiftl_bvM (Nat.pow 2 s)
@@ -1777,9 +1948,8 @@ Proof.
       simpl; rewrite find_add.
 
       reflexivity. }
-  - apply List.firstn_skipn.
-  - simplify; simp; lia.
-  - simplify.
+  - admit.
+  - admit.
   - rewrite var_names_succ.
     rewrite List.map_app; simp.
     unfold shiftl_list; simp.
@@ -1810,12 +1980,8 @@ Proof.
     rewrite! var_names_succ.
     rewrite! N_to_bvM_succ.
     rewrite! List.map_app.
-    rewrite! zip_app; simpl.
+    rewrite! zip_app; simp; try lia.
     rewrite List.rev_app_distr; simpl.
-    replace
-      (shiftl_bvM (Nat.pow 2 s) (bvM.of_N b n ++ [N.b2n (N.testbit n (N.of_nat b))]))
-    with
-      ((List.firstn b (shiftl_bvM (Nat.pow 2 s) (bvM.of_N b n ++ [N.b2n (N.testbit n (N.of_nat b))]))) ++ (List.skipn b (shiftl_bvM (Nat.pow 2 s) (bvM.of_N b n ++ [N.b2n (N.testbit n (N.of_nat b))]))))%list.
     apply run_split.
     - { replace (List.firstn b 
         (shiftl_bvM (Nat.pow 2 s)
@@ -1853,9 +2019,8 @@ Proof.
         simpl; rewrite find_add.
 
         reflexivity. }
-  - apply List.firstn_skipn.
-  - simplify; simp; lia.
-  - simplify.
+  - admit.
+  - admit.
   - unfold shiftl_list; simp.
     rewrite List.firstn_app; simp.
     replace (b - 2 ^ s)%nat with O by lia; simp.
@@ -2007,13 +2172,10 @@ Proof.
     simpl shiftl_exp_body.
 
     (* run seq *)
-    apply run_seq.
-    exists (List.app (var_names ("x" ++ to_string (N.of_nat s)) b) [("i" ++ to_string (N.of_nat s))%string]).
-    eexists.
-    split.
+    eapply run_seq with (ov' := (var_names ("x" ++s to_string (N.of_nat s)) b) ++l [("i" ++s to_string (N.of_nat s))]).
     + replace (bvM.of_N s i) with (bvM.of_N s (i mod 2 ^ N.of_nat s)).
       eapply run_pass_through with
-        (bv := [("i" ++ to_string (N.of_nat s))%string])
+        (bv := [("i" ++s to_string (N.of_nat s))])
         (bv_vals := [N.b2n (N.testbit i (N.of_nat s))]); eauto.
         admit. (* var names list property *)
       apply IHs with (i := (i mod 2 ^ N.of_nat s)).
@@ -2028,6 +2190,7 @@ Proof.
       rewrite N.shiftl_shiftl.
       do 3 f_equal.
       apply i_mod_plus_bit; lia. (* prove some bits thing here, using H0 *)
+    + admit. (* var names property *)
 Admitted.
 (* }}} *)
 
