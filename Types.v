@@ -3,12 +3,19 @@ Require Import UROP.IdentParsing.
 
 Declare Scope UROP_scope.
 Delimit Scope UROP_scope with UROP.
+
 (* Shorthands - List {{{ *)
 Local Open Scope UROP_scope.
 Notation "x :: l" := (cons x l)
   (at level 60, right associativity) : UROP_scope.
 Notation "[ ]" := nil : UROP_scope.
 Notation "[ x ; .. ; y ]" := (cons x .. (cons y nil) ..) : UROP_scope.
+
+Notation "x ++l y" := (List.app x y) (at level 90) : UROP_scope.
+Notation "s1 ++s s2" := (String.append s1 s2) (at level 90) : UROP_scope.
+Compute [1;2;3] ++l [4;5;6].
+
+Notation "a <?n b" := (Nat.ltb a b) (at level 90) : UROP_scope.
 (* }}} *)
 
 (* Types - Syntax {{{ *)

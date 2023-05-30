@@ -2,4 +2,6 @@
 CombExp.v
 IdentParsing.v
 Types.v
-
+BitVectors.v
+Tactics.v
+ExtraArith.v
