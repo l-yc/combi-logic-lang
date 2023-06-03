@@ -12,6 +12,7 @@ Require Import UROP.Types.
 Require Import UROP.BitVectors.
 Require Import UROP.Tactics.
 Require Import UROP.ExtraArith.
+Require Import UROP.ExtraLists.
 
 Module CombExp.
 
@@ -830,118 +831,6 @@ Proof.
 Qed.
 (* }}} *)
 
-(* var_names lemmas for generic shifter {{{ *)
-Definition to_string (n : N) := NilZero.string_of_uint (N.to_uint n).
-
-Fixpoint var_names_ (prefix : string) (n : nat) : list string := 
-  match n with
-  | O => []
-  | S n' => (prefix ++ to_string (N.of_nat n')) :: var_names_ prefix n'
-  end.
-
-Definition var_names (prefix : string) (n : nat) : list string := 
-  List.rev (var_names_ prefix n).
-
-Example var_names_1: 
-  var_names "x" 3 = ["x0"; "x1"; "x2"].
-Proof. reflexivity. Qed.
-
-Lemma var_names_nil : forall v,
-  var_names v 0 = [].
-Proof.
-  eauto.
-Qed.
-
-Lemma var_names_length' : forall v n,
-  List.length (var_names_ v n) = n.
-Proof.
-  induction n; simpl; eauto.
-Qed.
-
-Lemma var_names_length : forall v n,
-  List.length (var_names v n) = n.
-Proof.
-  unfold var_names.
-  intros.
-  rewrite List.rev_length.
-  apply var_names_length'.
-Qed.
-
-Lemma var_names_succ' : forall v n,
-  var_names_ v (S n) = (v ++ to_string (N.of_nat (n))) :: var_names_ v n.
-Proof.
-  intros; simpl; eauto.
-Qed.
-
-Lemma var_names_succ : forall v n,
-  var_names v (S n) = List.app (var_names v n) [v ++ to_string (N.of_nat (n))].
-Proof.
-  unfold var_names.
-  intros.
-  rewrite var_names_succ'.
-  eauto.
-Qed.
-
-(* not going to prove these string things *)
-Lemma string_app_neq : forall a b c,
-  b <> c <-> a ++ b <> a ++ c.
-Proof.
-Admitted.
-
-Lemma to_string_neq : forall n m,
-  n <> m <-> to_string n <> to_string m.
-Proof.
-Admitted.
-
-Lemma var_names_not_in : forall m v n,
-  le m n
-  -> ~ List.In (v ++s to_string (N.of_nat n)) (List.rev (var_names v m)).
-Proof.
-  induction m; simpl; intros; eauto.
-  rewrite var_names_succ.
-  rewrite List.rev_app_distr; simpl List.rev; simpl List.app.
-  rewrite List.not_in_cons.
-  split.
-  - apply string_app_neq.
-    apply to_string_neq.
-    lia.
-  - apply IHm; lia.
-Qed.
-
-Lemma var_names_nodup : forall v n,
-  List.NoDup (var_names v n).
-Proof.
-  induction n.
-  rewrite var_names_nil; apply List.NoDup_nil.
-  rewrite var_names_succ.
-  
-  apply rev_rev.
-  rewrite List.rev_app_distr; simpl.
-  apply List.NoDup_cons.
-  apply var_names_not_in; lia.
-  apply List.NoDup_rev.
-  assumption.
-Qed.
-
-Lemma var_names_spec : forall i s n d,
-  lt i n
-  -> List.nth i (var_names s n) d = (s ++s to_string (N.of_nat i)).
-Proof.
-  induction n.
-  inversion 1.
-  intros.
-  assert ((i < n)%nat \/ (i = n)%nat) by lia.
-  destruct H0.
-  - rewrite var_names_succ.
-    rewrite List.app_nth1; eauto; lists.
-    rewrite var_names_length; lia.
-  - subst; clear H.
-    rewrite var_names_succ.
-    rewrite List.app_nth2; rewrite var_names_length; try lia.
-    replace (n - n)%nat with O by lia; eauto.
-Qed.
-(* }}} *)
-
 (* Run Helpers {{{ *)
 Lemma state_to_values_idempotent : forall v,
   state_to_values (map_keys v) v = Ok (map_vals v).
@@ -1091,14 +980,122 @@ Proof.
 Admitted.
 (* }}} *)
 
-(* Generic shifter {{{ *)
+(* Auto Generated Var Names {{{ *)
+Definition to_string (n : N) := NilZero.string_of_uint (N.to_uint n).
+
+Fixpoint var_names_ (prefix : string) (n : nat) : list string := 
+  match n with
+  | O => []
+  | S n' => (prefix ++ to_string (N.of_nat n')) :: var_names_ prefix n'
+  end.
+
+Definition var_names (prefix : string) (n : nat) : list string := 
+  List.rev (var_names_ prefix n).
+
+Example var_names_1: 
+  var_names "x" 3 = ["x0"; "x1"; "x2"].
+Proof. reflexivity. Qed.
+
+Lemma var_names_nil : forall v,
+  var_names v 0 = [].
+Proof.
+  eauto.
+Qed.
+
+Lemma var_names_length' : forall v n,
+  List.length (var_names_ v n) = n.
+Proof.
+  induction n; simpl; eauto.
+Qed.
+
+Lemma var_names_length : forall v n,
+  List.length (var_names v n) = n.
+Proof.
+  unfold var_names.
+  intros.
+  rewrite List.rev_length.
+  apply var_names_length'.
+Qed.
+
+Lemma var_names_succ' : forall v n,
+  var_names_ v (S n) = (v ++ to_string (N.of_nat (n))) :: var_names_ v n.
+Proof.
+  intros; simpl; eauto.
+Qed.
+
+Lemma var_names_succ : forall v n,
+  var_names v (S n) = List.app (var_names v n) [v ++ to_string (N.of_nat (n))].
+Proof.
+  unfold var_names.
+  intros.
+  rewrite var_names_succ'.
+  eauto.
+Qed.
+
+(* not going to prove these string things *)
+Lemma string_app_neq : forall a b c,
+  b <> c <-> a ++ b <> a ++ c.
+Proof.
+Admitted.
+
+Lemma to_string_neq : forall n m,
+  n <> m <-> to_string n <> to_string m.
+Proof.
+Admitted.
+
+Lemma var_names_not_in : forall m v n,
+  le m n
+  -> ~ List.In (v ++s to_string (N.of_nat n)) (List.rev (var_names v m)).
+Proof.
+  induction m; simpl; intros; eauto.
+  rewrite var_names_succ.
+  rewrite List.rev_app_distr; simpl List.rev; simpl List.app.
+  rewrite List.not_in_cons.
+  split.
+  - apply string_app_neq.
+    apply to_string_neq.
+    lia.
+  - apply IHm; lia.
+Qed.
+
+Lemma var_names_nodup : forall v n,
+  List.NoDup (var_names v n).
+Proof.
+  induction n.
+  rewrite var_names_nil; apply List.NoDup_nil.
+  rewrite var_names_succ.
+  
+  apply rev_rev.
+  rewrite List.rev_app_distr; simpl.
+  apply List.NoDup_cons.
+  apply var_names_not_in; lia.
+  apply List.NoDup_rev.
+  assumption.
+Qed.
+
+Lemma var_names_spec : forall i s n d,
+  lt i n
+  -> List.nth i (var_names s n) d = (s ++s to_string (N.of_nat i)).
+Proof.
+  induction n.
+  inversion 1.
+  intros.
+  assert ((i < n)%nat \/ (i = n)%nat) by lia.
+  destruct H0.
+  - rewrite var_names_succ.
+    rewrite List.app_nth1; eauto; lists.
+    rewrite var_names_length; lia.
+  - subst; clear H.
+    rewrite var_names_succ.
+    rewrite List.app_nth2; rewrite var_names_length; try lia.
+    replace (n - n)%nat with O by lia; eauto.
+Qed.
+(* }}} *)
+
+(* Generic Shifter Implementation {{{ *)
 Close Scope N_scope. (* temporary thing *)
 Definition shiftl_list (n : nat) (l : list comb_exp) :=
   List.firstn (List.length l) (List.app (List.repeat <{#0}> n) l).
-
-Example shiftl_list_ex1 :
-  shiftl_list 2 [Var "x0"; Var "x1"; Var "x2"; Var "x3"] = [<{#0}>; <{#0}>; Var "x0"; Var "x1"].
-Proof. reflexivity. Qed.
 
 Fixpoint shiftl_layer (svar : comb_exp) (io_vars : list (string * (comb_exp * comb_exp))) : cmd :=
   match io_vars with
@@ -1107,7 +1104,7 @@ Fixpoint shiftl_layer (svar : comb_exp) (io_vars : list (string * (comb_exp * co
       CSeq (shiftl_layer svar t) (CDef ovar (Mux svar i0var i1var))
   end.
 
-Fixpoint shiftl_exp_body' (nbits : nat) (sbits : nat) :=
+Fixpoint shiftl_exp_body (nbits : nat) (sbits : nat) :=
   match sbits with
   | O => CSkip
   | S si =>
@@ -1116,14 +1113,9 @@ Fixpoint shiftl_exp_body' (nbits : nat) (sbits : nat) :=
     let i0vars := List.map Var (var_names ("x" ++ to_string (N.of_nat si)) nbits) in
     let i1vars := shiftl_list (Nat.pow 2 si) i0vars in
       CSeq 
-        (shiftl_exp_body' nbits si)
+        (shiftl_exp_body nbits si)
         (shiftl_layer svar (List.rev (zip ovars (zip i0vars i1vars))))
    end.
-
-Definition shiftl_exp_body (nbits : nat) (sbits : nat) := 
-  shiftl_exp_body' nbits sbits.
-
-Compute shiftl_exp_body 3 3.
 
 Definition shiftl_exp (nbits : nat) (sbits : nat) := 
   {|
@@ -1136,17 +1128,32 @@ Definition shiftl (nbits : nat) (n i : N) :=
   let sbits := PeanoNat.Nat.log2_up nbits in
   run (shiftl_exp nbits sbits) ((bvM.of_N nbits n) ++ (bvM.of_N sbits i)) default_env.
 
+(* Examples *)
+Open Scope N_scope.
+
+Example shiftl_list_ex1 :
+  shiftl_list 2 [Var "x0"; Var "x1"; Var "x2"; Var "x3"] = [<{#0}>; <{#0}>; Var "x0"; Var "x1"].
+Proof. reflexivity. Qed.
+
+Compute (shiftl_list 0 (List.map Var (var_names "x" 2))).
+Compute (shiftl_list 1 (List.map Var (var_names "x" 2))).
+Compute (shiftl_list 1 (List.map Var (var_names "x" 3))).
+Compute (shiftl_list 1 (List.map Var (var_names "x" 4))).
+
+Compute shiftl_exp_body 3 3.
+
 Compute shiftl 6 12 0.
 
-Close Scope string_scope.
-Open Scope N_scope.
 Example generic_shiftl_test : shiftl 5 31 4 = Ok [0; 0; 0; 0; 1].
 Proof. unfold shiftl. simpl. reflexivity. Qed.
 (* }}} *)
 
-(* Correctness Proof for generic shifter {{{ *)
+(* Generic Shifter Correctness {{{ *)
 Opaque String.append.
-Open Scope string_scope.
+Opaque values_to_state.
+Opaque interpret.
+Opaque state_to_values.
+
 
 
 
@@ -1156,12 +1163,10 @@ Lemma shiftl_list_length : forall x l,
 Proof.
   intros.
   unfold shiftl_list.
-  rewrite List.firstn_length.
-  rewrite List.app_length.
-  lia.
+  lists; lia.
 Qed.
 
-Ltac simplify :=
+Ltac sledgehammer :=
   try simplify_list; match goal with
   | [|- context[N.shiftl _ 0]] => rewrite N.shiftl_0_r
   | [|- context[Datatypes.length (bvM.of_N _ _)]] => rewrite bvM.of_N_length
@@ -1175,51 +1180,11 @@ Ltac simplify :=
   | _ => idtac
   end; simpl; eauto.
 
-Ltac simp := repeat simplify.
+Ltac slam := repeat sledgehammer.
 
 
 
 
-Compute (shiftl_list 0 (List.map Var (var_names "x" 2))).
-Compute (shiftl_list 1 (List.map Var (var_names "x" 2))).
-Compute (shiftl_list 1 (List.map Var (var_names "x" 3))).
-Compute (shiftl_list 1 (List.map Var (var_names "x" 4))).
-
-Definition shiftl_bvM (n : nat) (l : list N) :=
-  List.firstn (List.length l) (List.app (List.repeat 0 n) l).
-
-Lemma firstn_firstn_repeat : forall l l' x a b,
-  (a = List.length l)%nat ->
-  (a <= b)%nat ->
-  List.firstn a (List.app (List.repeat 0 x) l)
-  = List.firstn a (List.firstn b (List.app (List.repeat 0 x) (l ++l l'))).
-Proof.
-  induction l; simpl; intros; unfold shiftl_bvM; simpl.
-
-  - rewrite List.firstn_firstn.
-    replace (Nat.min a b) with a by lia.
-    subst; simp.
-
-  - rewrite List.firstn_firstn.
-    replace (Nat.min a0 b) with a0 by lia.
-    rewrite! List.firstn_app.
-    f_equal; simp.
-    replace (a :: l) with ([a] ++l l) by eauto.
-    replace (a :: (l ++l l')) with ([a] ++l l ++l l') by eauto.
-    rewrite List.firstn_app with (l2 := l'); simp.
-    replace (a0 - x - S (Datatypes.length l))%nat with O; simp; lia.
-Qed.
-
-Lemma shiftl_bvM_length_equiv : forall s b n,
-  shiftl_bvM (Nat.pow 2 s) (bvM.of_N b n) =
-  List.firstn b
-    (shiftl_bvM (Nat.pow 2 s)
-       (bvM.of_N b n ++l [N.b2n (N.testbit n (N.of_nat b))])).
-Proof.
-  intros.
-  unfold shiftl_bvM; simp.
-  eapply firstn_firstn_repeat; simp; lia.
-Qed.
 
 Lemma shiftl_layer_one : forall s b n v1 v2 svar,
   run {|
@@ -1235,7 +1200,7 @@ Lemma shiftl_layer_one : forall s b n v1 v2 svar,
                (shiftl_list (Nat.pow 2 s) (List.map Var (var_names v1 b))))))
   |}
   (bvM.of_N b n ++ [1]) default_env 
-  = Ok (shiftl_bvM (Nat.pow 2 s) (bvM.of_N b n)).
+  = Ok (bvM.shiftl (Nat.pow 2 s) (bvM.of_N b n)).
 Proof.
   induction b; eauto.
 
@@ -1251,14 +1216,14 @@ Proof.
   rewrite! var_names_succ.
   rewrite! bvM.of_N_succ.
   rewrite! List.map_app.
-  rewrite! zip_app; simp; try lia.
+  rewrite! zip_app; slam; try lia.
   rewrite List.rev_app_distr; simpl.
-  rewrite <- List.firstn_skipn with (n := b) (l := shiftl_bvM _ _).
+  rewrite <- List.firstn_skipn with (n := b) (l := bvM.shiftl _ _).
   apply run_split.
   - { replace (List.firstn b 
-      (shiftl_bvM (Nat.pow 2 s)
+      (bvM.shiftl (Nat.pow 2 s)
       (bvM.of_N b n ++ [N.b2n (N.testbit n (N.of_nat b))])))
-    with (shiftl_bvM (Nat.pow 2 s) (bvM.of_N b n)).
+    with (bvM.shiftl (Nat.pow 2 s) (bvM.of_N b n)).
     rewrite <- List.app_assoc.
     rewrite <- List.app_assoc.
     apply run_extra_args with
@@ -1266,16 +1231,9 @@ Proof.
       (inp := [N.b2n (N.testbit n (N.of_nat b))]).
     apply List.Forall_cons; eauto.
     apply IHb; eauto.
-    apply shiftl_bvM_length_equiv. }
-  - { Opaque values_to_state.
-      Opaque interpret.
-      Opaque state_to_values.
-      unfold run. simpl.
-      assert (Hargs: List.length ((var_names v1 b ++ [v1 ++ to_string (N.of_nat b)]) ++ [svar]) = List.length ((bvM.of_N b n ++ [N.b2n (N.testbit n (N.of_nat b))]) ++ [1])).
-      { rewrite! List.app_length.
-        rewrite var_names_length.
-        rewrite bvM.of_N_length.
-        reflexivity. }
+    apply bvM.shiftl_length_equiv. }
+  - { unfold run. simpl.
+      assert (Hargs: List.length ((var_names v1 b ++ [v1 ++ to_string (N.of_nat b)]) ++ [svar]) = List.length ((bvM.of_N b n ++ [N.b2n (N.testbit n (N.of_nat b))]) ++ [1])) by slam.
       apply values_to_state_ok in Hargs.
       destruct Hargs as [inp Hinp]; rewrite Hinp; simpl.
 
@@ -1298,8 +1256,8 @@ Proof.
       simpl; rewrite find_add.
 
       f_equal.
-      unfold shiftl_bvM.
-      simp.
+      unfold bvM.shiftl.
+      slam.
       rewrite List.skipn_firstn_comm.
       replace ((b + 1 - b)%nat) with 1%nat by lia.
       destruct (Nat.ltb b (2 ^ s)) eqn:rel.
@@ -1310,10 +1268,10 @@ Proof.
         { rewrite List.skipn_all2; eauto.
         rewrite List.repeat_length; lia. }
         Opaque List.firstn.
-        simp.
+        slam.
         rewrite List.firstn_skipn_comm.
         rewrite List.firstn_app.
-        simp.
+        slam.
 
         assert (Htrivial: (2 <> 0)%nat) by lia.
         epose proof (Nat.pow_nonzero 2 s Htrivial).
@@ -1325,47 +1283,47 @@ Proof.
         
         erewrite list_firstn_skipn_succ.
         erewrite bvM.of_N_spec; eauto; lia.
-        simp; lia. }
+        slam; lia. }
   - admit. (* var names property *)
   - admit. (* var names property *)
   - rewrite var_names_succ.
-    rewrite List.map_app; simp.
-    unfold shiftl_list; simp.
+    rewrite List.map_app; slam.
+    unfold shiftl_list; slam.
 
     rewrite List.firstn_app.
     replace (List.firstn b (List.repeat <{ # 0 }> (2 ^ s))) with (List.repeat <{ # 0 }> (2 ^ s)); cycle 1.
-    rewrite List.firstn_all2; simp.
+    rewrite List.firstn_all2; slam.
 
     rewrite List.firstn_app.
     replace (List.firstn (b + 1) (List.repeat <{ # 0 }> (2 ^ s))) with (List.repeat <{ # 0 }> (2 ^ s)); cycle 1.
-    rewrite List.firstn_all2; simp; lia.
+    rewrite List.firstn_all2; slam; lia.
 
     rewrite <- List.app_assoc; f_equal.
-    simp.
+    slam.
 
-    rewrite List.firstn_app; simp.
+    rewrite List.firstn_app; slam.
     assert (Htrivial: (2 <> 0)%nat) by lia.
     epose proof (Nat.pow_nonzero 2 s Htrivial).
-    replace (b + 1 - 2 ^ s - b)%nat with O by lia; simp.
+    replace (b + 1 - 2 ^ s - b)%nat with O by lia; slam.
     replace (b + 1 - 2 ^ s)%nat with (S (b - 2 ^ s)) by lia.
     erewrite list_firstn_succ.
     f_equal.
     rewrite List.map_nth.
-    rewrite var_names_spec; simp; lia.
-    rewrite List.map_length; simp; lia. }
+    rewrite var_names_spec; slam; lia.
+    rewrite List.map_length; slam; lia. }
   { replace (shiftl_list (Nat.pow 2 s) (List.map Var (var_names v1 (S b)))) 
     with (shiftl_list (Nat.pow 2 s) (List.map Var (var_names v1 b)) ++ [<{ # 0 }>])%list.
     rewrite! var_names_succ.
     rewrite! bvM.of_N_succ.
     rewrite! List.map_app.
-    rewrite! zip_app; simp; try lia.
+    rewrite! zip_app; slam; try lia.
     rewrite List.rev_app_distr; simpl.
-    rewrite <- List.firstn_skipn with (n := b) (l := shiftl_bvM _ _).
+    rewrite <- List.firstn_skipn with (n := b) (l := bvM.shiftl _ _).
     apply run_split.
     - { replace (List.firstn b 
-        (shiftl_bvM (Nat.pow 2 s)
+        (bvM.shiftl (Nat.pow 2 s)
         (bvM.of_N b n ++ [N.b2n (N.testbit n (N.of_nat b))])))
-      with (shiftl_bvM (Nat.pow 2 s) (bvM.of_N b n)).
+      with (bvM.shiftl (Nat.pow 2 s) (bvM.of_N b n)).
       rewrite <- List.app_assoc.
       rewrite <- List.app_assoc.
       apply run_extra_args with
@@ -1373,12 +1331,9 @@ Proof.
         (inp := [N.b2n (N.testbit n (N.of_nat b))]).
       apply List.Forall_cons; eauto.
       apply IHb; eauto.
-      apply shiftl_bvM_length_equiv. }
-    - { Opaque values_to_state.
-        Opaque interpret.
-        Opaque state_to_values.
-        unfold run. simpl.
-        assert (Hargs: List.length ((var_names v1 b ++ [v1 ++ to_string (N.of_nat b)]) ++ [svar]) = List.length ((bvM.of_N b n ++ [N.b2n (N.testbit n (N.of_nat b))]) ++ [1])) by simp.
+      apply bvM.shiftl_length_equiv. }
+    - { unfold run. simpl.
+        assert (Hargs: List.length ((var_names v1 b ++ [v1 ++ to_string (N.of_nat b)]) ++ [svar]) = List.length ((bvM.of_N b n ++ [N.b2n (N.testbit n (N.of_nat b))]) ++ [1])) by slam.
         apply values_to_state_ok in Hargs.
         destruct Hargs as [inp Hinp]; rewrite Hinp; simpl.
 
@@ -1397,28 +1352,28 @@ Proof.
         simpl; rewrite find_add.
 
         f_equal.
-        unfold shiftl_bvM.
-        simp.
+        unfold bvM.shiftl.
+        slam.
         rewrite List.firstn_app.
-        simp.
+        slam.
         replace ((b + 1 - 2 ^ s)%nat) with O by lia.
         rewrite List.firstn_O.
         rewrite List.app_nil_r.
-        erewrite list_firstn_skipn_succ by simp.
+        erewrite list_firstn_skipn_succ by slam.
         rewrite List.nth_repeat; eauto. }
   - admit. (* var names property *)
   - admit. (* var names property *)
-  - unfold shiftl_list; simp.
-    rewrite List.firstn_app; simp.
-    replace (b - 2 ^ s)%nat with O by lia; simp.
+  - unfold shiftl_list; slam.
+    rewrite List.firstn_app; slam.
+    replace (b - 2 ^ s)%nat with O by lia; slam.
 
     Opaque Nat.sub.
-    rewrite List.firstn_app; simp.
-    replace (S b - 2 ^ s)%nat with O by lia; simp.
+    rewrite List.firstn_app; slam.
+    replace (S b - 2 ^ s)%nat with O by lia; slam.
 
     replace (List.firstn (S b) (List.repeat <{ # 0 }> (2 ^ s)))
-    with (List.firstn b (List.repeat <{ # 0 }> (2 ^ s)) ++l [List.nth b (List.repeat <{ # 0 }> (2 ^ s)) 0]); simp.
-    erewrite list_firstn_succ by simp; simp. }
+    with (List.firstn b (List.repeat <{ # 0 }> (2 ^ s)) ++l [List.nth b (List.repeat <{ # 0 }> (2 ^ s)) 0]); slam.
+    erewrite list_firstn_succ by slam; slam. }
 
     Unshelve.
     all: eauto.
@@ -1454,13 +1409,13 @@ Proof.
   rewrite! var_names_succ.
   rewrite! bvM.of_N_succ.
   rewrite! List.map_app.
-  rewrite! zip_app; simp; try lia.
+  rewrite! zip_app; slam; try lia.
   rewrite List.rev_app_distr; simpl.
   apply run_split.
   - { replace (List.firstn b 
-      (shiftl_bvM (Nat.pow 2 s)
+      (bvM.shiftl (Nat.pow 2 s)
       (bvM.of_N b n ++ [N.b2n (N.testbit n (N.of_nat b))])))
-    with (shiftl_bvM (Nat.pow 2 s) (bvM.of_N b n)).
+    with (bvM.shiftl (Nat.pow 2 s) (bvM.of_N b n)).
     rewrite <- List.app_assoc.
     rewrite <- List.app_assoc.
     apply run_extra_args with
@@ -1468,16 +1423,9 @@ Proof.
       (inp := [N.b2n (N.testbit n (N.of_nat b))]).
     apply List.Forall_cons; eauto.
     apply IHb; eauto.
-    apply shiftl_bvM_length_equiv. }
-  - { Opaque values_to_state.
-      Opaque interpret.
-      Opaque state_to_values.
-      unfold run. simpl.
-      assert (Hargs: List.length ((var_names v1 b ++ [v1 ++ to_string (N.of_nat b)]) ++ [svar]) = List.length ((bvM.of_N b n ++ [N.b2n (N.testbit n (N.of_nat b))]) ++ [0])).
-      { rewrite! List.app_length.
-        rewrite var_names_length.
-        rewrite bvM.of_N_length.
-        reflexivity. }
+    apply bvM.shiftl_length_equiv. }
+  - { unfold run. simpl.
+      assert (Hargs: List.length ((var_names v1 b ++ [v1 ++ to_string (N.of_nat b)]) ++ [svar]) = List.length ((bvM.of_N b n ++ [N.b2n (N.testbit n (N.of_nat b))]) ++ [0])) by slam.
       apply values_to_state_ok in Hargs.
       destruct Hargs as [inp Hinp]; rewrite Hinp; simpl.
 
@@ -1503,42 +1451,42 @@ Proof.
   - admit.
   - admit.
   - rewrite var_names_succ.
-    rewrite List.map_app; simp.
-    unfold shiftl_list; simp.
+    rewrite List.map_app; slam.
+    unfold shiftl_list; slam.
 
     rewrite List.firstn_app.
     replace (List.firstn b (List.repeat <{ # 0 }> (2 ^ s))) with (List.repeat <{ # 0 }> (2 ^ s)); cycle 1.
-    rewrite List.firstn_all2; simp.
+    rewrite List.firstn_all2; slam.
 
     rewrite List.firstn_app.
     replace (List.firstn (b + 1) (List.repeat <{ # 0 }> (2 ^ s))) with (List.repeat <{ # 0 }> (2 ^ s)); cycle 1.
-    rewrite List.firstn_all2; simp; lia.
+    rewrite List.firstn_all2; slam; lia.
 
     rewrite <- List.app_assoc; f_equal.
-    simp.
+    slam.
 
-    rewrite List.firstn_app; simp.
+    rewrite List.firstn_app; slam.
     assert (Htrivial: (2 <> 0)%nat) by lia.
     epose proof (Nat.pow_nonzero 2 s Htrivial).
-    replace (b + 1 - 2 ^ s - b)%nat with O by lia; simp.
+    replace (b + 1 - 2 ^ s - b)%nat with O by lia; slam.
     replace (b + 1 - 2 ^ s)%nat with (S (b - 2 ^ s)) by lia.
     erewrite list_firstn_succ.
     f_equal.
     rewrite List.map_nth.
-    rewrite var_names_spec; simp; lia.
-    rewrite List.map_length; simp; lia. }
+    rewrite var_names_spec; slam; lia.
+    rewrite List.map_length; slam; lia. }
   { replace (shiftl_list (Nat.pow 2 s) (List.map Var (var_names v1 (S b)))) 
     with (shiftl_list (Nat.pow 2 s) (List.map Var (var_names v1 b)) ++ [<{ # 0 }>])%list.
     rewrite! var_names_succ.
     rewrite! bvM.of_N_succ.
     rewrite! List.map_app.
-    rewrite! zip_app; simp; try lia.
+    rewrite! zip_app; slam; try lia.
     rewrite List.rev_app_distr; simpl.
     apply run_split.
     - { replace (List.firstn b 
-        (shiftl_bvM (Nat.pow 2 s)
+        (bvM.shiftl (Nat.pow 2 s)
         (bvM.of_N b n ++ [N.b2n (N.testbit n (N.of_nat b))])))
-      with (shiftl_bvM (Nat.pow 2 s) (bvM.of_N b n)).
+      with (bvM.shiftl (Nat.pow 2 s) (bvM.of_N b n)).
       rewrite <- List.app_assoc.
       rewrite <- List.app_assoc.
       apply run_extra_args with
@@ -1546,12 +1494,12 @@ Proof.
         (inp := [N.b2n (N.testbit n (N.of_nat b))]).
       apply List.Forall_cons; eauto.
       apply IHb; eauto.
-      apply shiftl_bvM_length_equiv. }
+      apply bvM.shiftl_length_equiv. }
     - { Opaque values_to_state.
         Opaque interpret.
         Opaque state_to_values.
         unfold run. simpl.
-        assert (Hargs: List.length ((var_names v1 b ++ [v1 ++ to_string (N.of_nat b)]) ++ [svar]) = List.length ((bvM.of_N b n ++ [N.b2n (N.testbit n (N.of_nat b))]) ++ [0])) by simp.
+        assert (Hargs: List.length ((var_names v1 b ++ [v1 ++ to_string (N.of_nat b)]) ++ [svar]) = List.length ((bvM.of_N b n ++ [N.b2n (N.testbit n (N.of_nat b))]) ++ [0])) by slam.
         apply values_to_state_ok in Hargs.
         destruct Hargs as [inp Hinp]; rewrite Hinp; simpl.
 
@@ -1573,49 +1521,18 @@ Proof.
         reflexivity. }
   - admit.
   - admit.
-  - unfold shiftl_list; simp.
-    rewrite List.firstn_app; simp.
-    replace (b - 2 ^ s)%nat with O by lia; simp.
+  - unfold shiftl_list; slam.
+    rewrite List.firstn_app; slam.
+    replace (b - 2 ^ s)%nat with O by lia; slam.
 
     Opaque Nat.sub.
-    rewrite List.firstn_app; simp.
-    replace (S b - 2 ^ s)%nat with O by lia; simp.
-
-    replace (List.firstn (S b) (List.repeat <{ # 0 }> (2 ^ s)))
-    with (List.firstn b (List.repeat <{ # 0 }> (2 ^ s)) ++l [List.nth b (List.repeat <{ # 0 }> (2 ^ s)) 0]); simp.
-    erewrite list_firstn_succ by simp; simp. }
+    rewrite List.firstn_app; slam.
+    replace (S b - 2 ^ s)%nat with O by lia; slam.
+    erewrite list_firstn_succ by slam; slam. }
 
     Unshelve.
     all: eauto.
 Admitted.
-
-Lemma shiftl_bvM_length : forall x b n,
-  Datatypes.length (shiftl_bvM x (bvM.of_N b n)) = b.
-Proof.
-  intros.
-  unfold shiftl_bvM.
-  simp.
-  lia.
-Qed.
-
-Lemma shiftl_bvM_equiv : forall x b n,
-  shiftl_bvM x (bvM.of_N b n) = bvM.of_N b (N.shiftl n (N.of_nat x)).
-Proof.
-  intros.
-  apply List.nth_ext with (d := 0) (d' := 0); simp.
-  - apply shiftl_bvM_length.
-  - rewrite shiftl_bvM_length; intros.
-    unfold shiftl_bvM; rewrite list_fact; simp; try lia.
-    rewrite bvM.of_N_spec; try lia.
-
-    assert (Hnx: lt n0 x \/ ge n0 x) by lia; destruct Hnx.
-    + rewrite N.shiftl_spec_low; simp; try lia.
-      rewrite List.app_nth1; simp.
-    + rewrite N.shiftl_spec_high; simp; try lia.
-      rewrite List.app_nth2; simp.
-      replace (N.of_nat n0 - N.of_nat x) with (N.of_nat (n0 - x)) by lia.
-      rewrite bvM.of_N_spec; eauto; try lia.
-Qed.
 
 Lemma shiftl_layer_equiv : forall s b n i v1 v2 svar,
   let bit := N.b2n (N.testbit i (N.of_nat s)) in
@@ -1637,32 +1554,11 @@ Proof.
   intros.
   destruct (N.testbit i (N.of_nat s)); subst bit; simpl N.b2n.
   rewrite shiftl_layer_one.
-  { f_equal; rewrite shiftl_bvM_equiv.
+  { f_equal; rewrite bvM.shiftl_correct.
     repeat f_equal; rewrite Nat2N.inj_pow; lia. }
   rewrite shiftl_layer_zero; simpl.
   { rewrite N.shiftl_0_r; eauto. }
 Qed.
-
-(* need a lemma here about N_to_bvM being modulo *)
-Lemma bvM_is_mod : forall s n n',
-  n mod 2 ^ N.of_nat s = n' mod 2 ^ N.of_nat s
-  -> bvM.of_N s n = bvM.of_N s n'.
-Proof.
-  intros.
-  Search (List.nth).
-  apply List.nth_ext with (d := 0) (d' := 0); simp.
-
-  intros.
-  rewrite! bvM.of_N_spec; eauto.
-
-  rewrite <- N.mod_pow2_bits_low with (n := (N.of_nat s)) by lia.
-  rewrite <- N.mod_pow2_bits_low with (n := (N.of_nat s)) (a := n') by lia.
-  rewrite H.
-  eauto.
-Qed.
-
-(*H0 : i < N.pos (2 ^ Pos.of_succ_nat s)
-   bvM.of_N s (i mod 2 ^ N.of_nat s) = bvM.of_N s i*)
 
 Theorem shiftl_equiv : forall s b n i,
   ge b (Nat.pow 2 s)
@@ -1681,10 +1577,7 @@ Proof.
 
     (* show run output is ok *)
     unfold run; simpl.
-    assert (Hargs: List.length (var_names "x0" b) = List.length (bvM.of_N b n)).
-    { rewrite var_names_length.
-      rewrite bvM.of_N_length.
-      reflexivity. }
+    assert (Hargs: List.length (var_names "x0" b) = List.length (bvM.of_N b n)) by slam.
     apply values_to_state_ok in Hargs.
     destruct Hargs as [inp Hinp]; rewrite Hinp; simpl.
     apply values_to_state_convertible; eauto.
@@ -1711,7 +1604,7 @@ Proof.
       apply N.mod_lt; lia.
       Search (N.testbit).
 
-      apply bvM_is_mod.
+      apply bvM.of_N_is_mod.
       rewrite N.mod_mod; lia.
     + replace (N.of_nat (S s)) with (N.of_nat s + 1) by lia.
       rewrite shiftl_layer_equiv.
@@ -1722,8 +1615,10 @@ Proof.
 Admitted.
 (* }}} *)
 
-(* zify *)
-(* Search N.shiftl. *)
-(* _spec... *)
+(* Notes 
+- zify
+- Search N.shiftl.
+- _spec...
+- coqutils submodule in bedrock2 *)
 
 End CombExp.

@@ -5,92 +5,9 @@ Require Import Lia.
 Require Import UROP.Types.
 Require Import UROP.ExtraArith.
 Require Import UROP.Tactics.
+Require Import UROP.ExtraLists.
 
 Local Open Scope UROP_scope.
-
-
-(* List Helper Lemmas {{{ *)
-Local Open Scope N_scope.
-Lemma list_fact {A} : forall n m (l : list A) d,
-  lt n m
-  -> ge (List.length l) m
-  -> List.nth n (List.firstn m l) d = List.nth n l d.
-Proof.
-  intros.
-  replace (List.nth n l d) with (List.nth n (List.firstn m l ++l List.skipn m l) d).
-  Search (List.nth).
-  rewrite List.app_nth1; eauto.
-  rewrite List.firstn_length; lia.
-  rewrite List.firstn_skipn; eauto.
-Qed.
-
-Lemma rev_rev {A} : forall (l : list A),
-  List.NoDup (List.rev l) -> List.NoDup l.
-Proof.
-  intros.
-  apply List.NoDup_rev in H.
-  rewrite List.rev_involutive in H.
-  assumption.
-Qed.
-
-Open Scope list_scope.
-Lemma zip_app {A} {B} : forall (a1 : list A) (b1 : list B) a2 b2,
-  List.length a1 = List.length b1
-  -> zip (a1 ++ a2) (b1 ++ b2) = zip a1 b1 ++ zip a2 b2.
-Proof.
-  induction a1; induction b1; eauto.
-  inversion 1.
-  inversion 1.
-  intros; simpl.
-  f_equal.
-  eauto.
-Qed.
-
-Lemma zip_length {A} {B} : forall (a : list A) (b : list B),
-  List.length (zip a b) = Nat.min (List.length a) (List.length b).
-Proof.
-  induction a; induction b; simpl; eauto.
-Qed.
-Close Scope list_scope.
-
-Lemma list_firstn_skipn_succ : forall A (l : list A) i d,
-  lt i (List.length l) ->
-  List.skipn i (List.firstn (i+1) l) = [List.nth i l d].
-Proof.
-  induction l.
-  inversion 1.
-
-  lists.
-  intros.
-  destruct i.
-  lists.
-  replace ((S i + 1)%nat) with (S (i + 1)) by lia.
-  lists.
-  apply IHl.
-  lia.
-Qed.
-
-Lemma list_firstn_succ : forall A (l : list A) i d,
-  lt i (List.length l) ->
-  List.firstn (S i) l = (List.firstn i l ++l [List.nth i l d]).
-Proof.
-  induction l.
-  inversion 1.
-
-  lists.
-  intros.
-  destruct i.
-  lists.
-  replace ((S i + 1)%nat) with (S (i + 1)) by lia.
-  lists.
-  f_equal.
-  apply IHl.
-  lia.
-Qed.
-(* }}} *)
-
-
-
 
 Module bv.
   Local Open Scope N_scope.
@@ -227,6 +144,8 @@ Module bv.
 End bv.
 
 Module bvM.
+  Local Open Scope N_scope.
+
   (* Conversion {{{ *)
   Definition of_N (m : nat) (n : N) : list N :=
     if Nat.eqb m 0 then []
@@ -262,13 +181,10 @@ Module bvM.
     simpl.
 
     destruct (Nat.leb (Datatypes.length (bv.of_N n)) (S m)) eqn:Hle.
-    - apply PeanoNat.Nat.leb_le in Hle.
-      rewrite List.app_length.
+    - apply PeanoNat.Nat.leb_le in Hle; lists.
       unfold bv.zeroes.
-      destruct (Datatypes.length (bv.of_N n)).
-      + rewrite List.repeat_length; eauto.
-      + rewrite List.repeat_length.
-        rewrite PeanoNat.Nat.add_sub_assoc; lia.
+      destruct (Datatypes.length (bv.of_N n)); lists.
+      rewrite PeanoNat.Nat.add_sub_assoc; lia.
     - destruct (Datatypes.length (bv.of_N n)) eqn:Heq.
       + inversion Hle.
       + apply PeanoNat.Nat.leb_gt in Hle.
@@ -276,6 +192,7 @@ Module bvM.
         rewrite List.firstn_length.
         apply min_l; lia.
   Qed.
+  Local Hint Rewrite of_N_length : core.
 
   Lemma of_N_spec : forall i m n d,
     lt i m
@@ -292,9 +209,7 @@ Module bvM.
           subst; simpl.
           destruct i eqn:Hi; eauto.
           unfold bv.zeroes.
-          rewrite List.nth_indep with (d' := 0%N).
-          rewrite List.nth_repeat; eauto.
-          rewrite List.repeat_length; lia.
+          rewrite List.nth_indep with (d' := 0%N); lists; lia.
         * rewrite N.eqb_neq in HN.
           destruct (Nat.ltb i (List.length (bv.of_N n))) eqn:Hin.
           { rewrite PeanoNat.Nat.ltb_lt in Hin.
@@ -305,18 +220,14 @@ Module bvM.
             rewrite List.app_nth2; eauto.
 
             unfold bv.zeroes.
-            rewrite List.nth_indep with (d' := 0%N).
-            rewrite List.nth_repeat; eauto.
-            rewrite bit_fact; simpl. lia.
-            rewrite bv.bv_size_equiv in Hin; lia.
-
-            rewrite List.repeat_length; lia. }
+            rewrite List.nth_indep with (d' := 0%N); lists; try lia.
+            rewrite bit_fact; simpl; try lia.
+            rewrite bv.bv_size_equiv in Hin; lia. }
       + rewrite PeanoNat.Nat.leb_gt in Hleb.
         destruct (N.eqb n 0) eqn:HN. 
         * rewrite N.eqb_eq in HN.
           subst; simpl.
-          simpl in Hleb.
-          lia.
+          simpl in Hleb; lia.
         * rewrite N.eqb_neq in HN.
           rewrite list_fact; try lia.
           apply bv.of_N_spec.
@@ -327,12 +238,9 @@ Module bvM.
     bvM.of_N (S m) n = List.app (bvM.of_N m n) [N.b2n (N.testbit n (N.of_nat m))].
   Proof.
     intros.
-    eapply List.nth_ext.
-    - rewrite List.app_length.
-      rewrite! bvM.of_N_length.
-      simpl; lia.
-    - rewrite bvM.of_N_length.
-      intros.
+    eapply List.nth_ext; lists; simplify.
+    - lia.
+    - intros.
       destruct (Nat.ltb n0 m) eqn:ineq.
       + rewrite PeanoNat.Nat.ltb_lt in ineq.
         rewrite List.app_nth1; try reflexivity.
@@ -349,6 +257,82 @@ Module bvM.
   (* }}} *)
 
   (* L-Shifting {{{ *)
+  Definition shiftl (n : nat) (l : list N) :=
+    List.firstn (List.length l) (List.app (List.repeat 0 n) l).
+
+  Lemma firstn_firstn_repeat : forall l l' x a b,
+    (a = List.length l)%nat ->
+    (a <= b)%nat ->
+    List.firstn a (List.app (List.repeat 0 x) l)
+    = List.firstn a (List.firstn b (List.app (List.repeat 0 x) (l ++l l'))).
+  Proof.
+    induction l; simpl; intros; unfold shiftl; lists; rewrite List.firstn_firstn.
+    - subst; lists.
+    - replace (Nat.min a0 b) with a0 by lia; lists.
+      rewrite! List.firstn_app.
+      f_equal; lists.
+      replace (a :: (l ++l l')) with (a :: l ++l l') by eauto.
+      rewrite List.firstn_app with (l2 := l'); lists.
+      replace (a0 - x - S (Datatypes.length l))%nat with O; lists; lia.
+  Qed.
+
+  Lemma shiftl_length_equiv : forall s b n,
+    shiftl (Nat.pow 2 s) (bvM.of_N b n) =
+    List.firstn b
+      (shiftl (Nat.pow 2 s)
+         (bvM.of_N b n ++l [N.b2n (N.testbit n (N.of_nat b))])).
+  Proof.
+    intros.
+    unfold shiftl; lists.
+    rewrite bvM.of_N_length; lists.
+    eapply firstn_firstn_repeat; lists; try rewrite bvM.of_N_length; try lia.
+  Qed.
+
+  Lemma shiftl_length : forall x b n,
+    Datatypes.length (bvM.shiftl x (bvM.of_N b n)) = b.
+  Proof.
+    intros.
+    unfold bvM.shiftl; lists.
+    rewrite of_N_length; lia.
+  Qed.
+
+  Lemma shiftl_correct : forall x b n,
+    bvM.shiftl x (bvM.of_N b n) = bvM.of_N b (N.shiftl n (N.of_nat x)).
+  Proof.
+    intros.
+    apply List.nth_ext with (d := 0) (d' := 0); lists; rewrite shiftl_length.
+    - rewrite of_N_length; eauto.
+    - intros.
+      unfold bvM.shiftl; rewrite list_fact; lists; try rewrite of_N_length; try lia.
+      rewrite bvM.of_N_spec; try lia.
+
+      assert (Hnx: lt n0 x \/ ge n0 x) by lia; destruct Hnx.
+      + rewrite N.shiftl_spec_low; lists; try lia.
+        rewrite List.app_nth1; lists.
+      + rewrite N.shiftl_spec_high; lists; try lia.
+        rewrite List.app_nth2; lists.
+        rewrite bvM.of_N_spec; eauto; try lia.
+        do 2 f_equal; lia.
+  Qed.
+
+  (* need a lemma here about N_to_bvM being modulo *)
+  Lemma of_N_is_mod : forall s n n',
+    n mod 2 ^ N.of_nat s = n' mod 2 ^ N.of_nat s
+    -> bvM.of_N s n = bvM.of_N s n'.
+  Proof.
+    intros.
+    apply List.nth_ext with (d := 0) (d' := 0); try rewrite! of_N_length; lists.
+
+    intros; rewrite! bvM.of_N_spec; eauto.
+
+    rewrite <- N.mod_pow2_bits_low with (n := (N.of_nat s)) by lia.
+    rewrite <- N.mod_pow2_bits_low with (n := (N.of_nat s)) (a := n') by lia.
+    rewrite H; eauto.
+  Qed.
+
+  (*H0 : i < N.pos (2 ^ Pos.of_succ_nat s)
+     bvM.of_N s (i mod 2 ^ N.of_nat s) = bvM.of_N s i*)
+
   (* }}} *)
 End bvM.
 
