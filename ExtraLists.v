@@ -4,7 +4,26 @@ Require Import Lia.
 
 Local Open Scope UROP_scope.
 
+Global Hint Rewrite List.map_length : List.
+Global Hint Rewrite List.repeat_length : List.
+Global Hint Rewrite List.firstn_O : List.
+Global Hint Rewrite List.app_nil_r : List.
+Global Hint Rewrite List.firstn_length : List.
+Global Hint Rewrite List.app_length : List.
+Global Hint Rewrite List.firstn_cons : List.
+Global Hint Rewrite List.skipn_cons : List.
+Global Hint Rewrite List.nth_repeat : List.
+Global Hint Rewrite List.map_app : List.
+Global Hint Rewrite List.rev_app_distr : List.
+
 Ltac simplify_list :=
+  try match goal with
+  | [H: (_ < 0)%nat |- _] => inversion H
+  | [|- context[List.nth _ (List.repeat _ _) _]] => rewrite List.nth_repeat
+  | _ => idtac
+   end; autorewrite with List; simpl; eauto.
+
+(*Ltac simplify_list :=
   try match goal with
   | [|- context[Datatypes.length (List.map _ _)]] => rewrite List.map_length
   | [|- context[Datatypes.length (List.repeat _ _)]] => rewrite List.repeat_length
@@ -18,7 +37,8 @@ Ltac simplify_list :=
   | [|- context[List.nth _ (List.repeat _ _) _]] => rewrite List.nth_repeat
   (*| [|- context[List.firstn _ (_ ++l _)]] => rewrite List.firstn_app*)
   | _ => idtac
-  end; simpl; eauto.
+   end; simpl; eauto.
+ *)
 
 Ltac lists := repeat simplify_list.
 
